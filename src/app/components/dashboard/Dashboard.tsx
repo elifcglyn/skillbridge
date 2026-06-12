@@ -81,7 +81,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       case "notifications": return <NotificationsView />;
       case "feedback": return <FeedbackView />;
       case "progress": return <SkillProgressView />;
-      case "findmatch": return <FindMatchView />;
+      case "findmatch": return <FindMatchView onNavigate={setActiveView} />;
       default: return <HomeView onNavigate={setActiveView} />;
     }
   };

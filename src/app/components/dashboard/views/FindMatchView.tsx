@@ -24,8 +24,11 @@ const ME = {
 };
 
 type Step = "select" | "spinning" | "result";
+interface FindMatchViewProps {
+  onNavigate: (view: string) => void;
+}
 
-export function FindMatchView() {
+export function FindMatchView({ onNavigate }: FindMatchViewProps) {
   const [step, setStep] = useState<Step>("select");
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const [customSkill, setCustomSkill] = useState("");
@@ -35,11 +38,10 @@ export function FindMatchView() {
     setSelectedSkill(skill);
     setStep("spinning");
 
-    // Beceriye uygun kişiyi bul (yoksa rastgele birini göster)
+
     const found = MOCK_POOL.find(p => p.teaches === skill)
       || MOCK_POOL[Math.floor(Math.random() * MOCK_POOL.length)];
 
-    // 1.5 sn "eşleşiyor" animasyonu sonra sonucu göster
     setTimeout(() => {
       setMatchedUser(found);
       setStep("result");
@@ -166,10 +168,12 @@ export function FindMatchView() {
               </div>
 
               <div className="flex gap-2 mt-4">
-                <button className="flex-1 py-2.5 rounded-xl border border-border font-semibold text-sm text-foreground hover:bg-muted transition-all flex items-center justify-center gap-1.5">
+                <button onClick={() => onNavigate("messages")}
+                  className="flex-1 py-2.5 rounded-xl border border-border font-semibold text-sm text-foreground hover:bg-muted transition-all flex items-center justify-center gap-1.5">
                   <MessageSquare size={15} /> Mesaj Gönder
                 </button>
-                <button className="flex-1 py-2.5 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-1.5"
+                <button onClick={() => onNavigate("calendar")}
+                  className="flex-1 py-2.5 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-1.5"
                   style={{ background: "var(--sb-gradient)" }}>
                   <Calendar size={15} /> Görüşme Planla
                 </button>
