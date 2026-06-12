@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   User, Users, MessageSquare, Calendar, Bell, Star, BarChart2,
   Settings, LogOut, Sun, Moon, Menu, Home,
-  Zap, Search, Award
+  Zap, Search
 } from "lucide-react";
 import { supabase } from '@/lib/supabase'; // Supabase bağlantısı
 import {
@@ -25,7 +25,7 @@ import { NotificationsView } from "./views/NotificationsView";
 import { FeedbackView } from "./views/FeedbackView";
 import { SkillProgressView } from "./views/SkillProgressView";
 import { HomeView } from "./views/HomeView";
-
+import { FindMatchView } from "./views/FindMatchView";
 interface DashboardProps {
   onNavigate: (page: string) => void;
 }
@@ -33,6 +33,7 @@ interface DashboardProps {
 const NAV_ITEMS = [
   { id: "home", icon: Home, label: "Ana Sayfa" },
   { id: "profile", icon: User, label: "Profilim" },
+  { id: "findmatch", icon: Sparkles, label: "Eşleşme Bul" },
   { id: "matches", icon: Users, label: "Eşleşmeler", badge: 3 },
   { id: "messages", icon: MessageSquare, label: "Mesajlar", badge: 5 },
   { id: "calendar", icon: Calendar, label: "Takvim" },
@@ -242,7 +243,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     switch (activeView) {
       case "home": return <HomeView onNavigate={setActiveView} />;
       case "profile": return <ProfileView />;
-      case "matches": return <MatchesView />;
+      case "matches": return <MatchesView onNavigate={setActiveView} />;
       case "messages": return <MessagesView />;
       case "calendar": return <CalendarView />;
       case "notifications": return (
@@ -261,6 +262,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       );
       case "feedback": return <FeedbackView />;
       case "progress": return <SkillProgressView />;
+      case "findmatch": return <FindMatchView onNavigate={setActiveView} />;
       default: return <HomeView onNavigate={setActiveView} />;
     }
   };
