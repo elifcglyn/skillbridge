@@ -12,11 +12,25 @@ interface HomeViewProps {
 }
 
 const RECENT_MATCHES = [
-  { name: "Ayşe Yılmaz", skill: "React Geliştirme", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&h=60&fit=crop", type: "mentor", rating: 4.9, distance: "0.8km", online: true },
-  { name: "Caner Türk", skill: "İngilizce Pratik", avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop", type: "learner", rating: 4.7, distance: "1.2km", online: false },
-  { name: "Zeynep Demir", skill: "UI/UX Tasarım", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=60&h=60&fit=crop", type: "mentor", rating: 5.0, distance: "2.1km", online: true },
+  { 
+    name: "Ayşe Kara", 
+    skill: "React Geliştirme", 
+    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&h=60&fit=crop", 
+    type: "mentor", rating: 4.9, distance: "0.3km", online: true 
+  },
+  { 
+    name: "Mert Yıldız", 
+    skill: "Python & Veri Analizi", 
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop", 
+    type: "learner", rating: 4.7, distance: "0.8km", online: false 
+  },
+  { 
+    name: "Zeynep Arslan", 
+    skill: "UI/UX Tasarım", 
+    avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=60&h=60&fit=crop", 
+    type: "mentor", rating: 5.0, distance: "1.1km", online: true 
+  },
 ];
-
 const UPCOMING_SESSIONS = [
   { title: "Python Temelleri", mentor: "Aria Chen", time: "Bugün, 15:00", color: "#4338ca", emoji: "🐍" },
   { title: "Figma Atölyesi", mentor: "Zara Ahmed", time: "Yarın, 14:00", color: "#7c3aed", emoji: "🎨" },
