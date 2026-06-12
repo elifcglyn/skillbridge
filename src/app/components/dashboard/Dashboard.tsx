@@ -75,7 +75,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     switch (activeView) {
       case "home": return <HomeView onNavigate={setActiveView} />;
       case "profile": return <ProfileView />;
-      case "matches": return <MatchesView />;
+      case "matches": return <MatchesView onNavigate={setActiveView} />;
       case "messages": return <MessagesView />;
       case "calendar": return <CalendarView />;
       case "notifications": return <NotificationsView />;

@@ -15,6 +15,7 @@ const MOCK_POOL = [
   { name: "Zeynep Arslan", teaches: "Python", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=200&h=200&fit=crop", match: 93, university: "Kırklareli Üniversitesi" },
   { name: "Burak Şahin", teaches: "Gitar", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&h=200&fit=crop", match: 85, university: "Kırklareli Üniversitesi" },
   { name: "Selin Öztürk", teaches: "UI/UX Tasarım", avatar: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=200&h=200&fit=crop", match: 91, university: "Kırklareli Üniversitesi" },
+  { name: "Elif Yıldırım", teaches: "Ebru Sanatı", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&h=200&fit=crop", match: 88, university: "Kırklareli Üniversitesi" },
 ];
 
 // Şu an giriş yapan kullanıcıyı temsil eden mock kart (Profilim'den gelecek)
@@ -39,8 +40,10 @@ export function FindMatchView({ onNavigate }: FindMatchViewProps) {
     setStep("spinning");
 
 
-    const found = MOCK_POOL.find(p => p.teaches === skill)
-      || MOCK_POOL[Math.floor(Math.random() * MOCK_POOL.length)];
+    const searchTerm = skill.toLowerCase().trim();
+    const found = MOCK_POOL.find(p =>
+      p.teaches.toLowerCase().includes(searchTerm) || searchTerm.includes(p.teaches.toLowerCase())
+    ) || MOCK_POOL[Math.floor(Math.random() * MOCK_POOL.length)];
 
     setTimeout(() => {
       setMatchedUser(found);
@@ -202,7 +205,8 @@ export function FindMatchView({ onNavigate }: FindMatchViewProps) {
             </button>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence> 
     </div>
   );
-}
+  
+} 

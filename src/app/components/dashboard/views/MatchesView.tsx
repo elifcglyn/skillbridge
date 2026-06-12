@@ -3,17 +3,67 @@ import { motion, AnimatePresence } from "motion/react";
 import { MapPin, Star, MessageSquare, Calendar, Filter, Zap, Check, X } from "lucide-react";
 
 const ALL_MATCHES = [
-  { id: 1, name: "Priya Sharma", skill: "React & TypeScript", wantSkill: "Yoga", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop", rating: 4.9, sessions: 31, distance: "0.8km", online: true, match: 97, university: "MIT", status: "pending" },
-  { id: 2, name: "Tom Walker", skill: "Spanish Tutoring", wantSkill: "Python", avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&h=80&fit=crop", rating: 4.7, sessions: 19, distance: "1.2km", online: false, match: 92, university: "Harvard", status: "pending" },
-  { id: 3, name: "Mei Lin", skill: "Piano & Theory", wantSkill: "English", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=80&h=80&fit=crop", rating: 5.0, sessions: 44, distance: "2.1km", online: true, match: 89, university: "Berklee", status: "accepted" },
-  { id: 4, name: "Daniel Park", skill: "Photography", wantSkill: "Web Dev", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=80&h=80&fit=crop", rating: 4.8, sessions: 22, distance: "3.4km", online: true, match: 85, university: "RISD", status: "accepted" },
-  { id: 5, name: "Amara Nwosu", skill: "Statistics & Data", wantSkill: "Design", avatar: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=80&h=80&fit=crop", rating: 4.9, sessions: 37, distance: "0.5km", online: false, match: 94, university: "Yale", status: "pending" },
-  { id: 6, name: "Luis Mendez", skill: "Guitar & Flamenco", wantSkill: "French", avatar: "https://images.unsplash.com/photo-1463453091185-61582044d556?w=80&h=80&fit=crop", rating: 4.6, sessions: 28, distance: "4.1km", online: false, match: 78, university: "Julliard", status: "nearby" },
+  { 
+    id: 1, 
+    name: "Ayşe Kara", 
+    skill: "React & TypeScript", 
+    wantSkill: "İngilizce", 
+    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop", 
+    rating: 4.9, sessions: 12, distance: "0.3km", online: true, match: 97, 
+    university: "Kırklareli Üniversitesi", status: "pending" 
+  },
+  { 
+    id: 2, 
+    name: "Mert Yıldız", 
+    skill: "Python & Veri Analizi", 
+    wantSkill: "Gitar", 
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80&h=80&fit=crop", 
+    rating: 4.7, sessions: 8, distance: "0.8km", online: false, match: 92, 
+    university: "Kırklareli Üniversitesi", status: "pending" 
+  },
+  { 
+    id: 3, 
+    name: "Zeynep Arslan", 
+    skill: "UI/UX Tasarım", 
+    wantSkill: "React", 
+    avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=80&h=80&fit=crop", 
+    rating: 5.0, sessions: 19, distance: "1.1km", online: true, match: 89, 
+    university: "Kırklareli Üniversitesi", status: "accepted" 
+  },
+  { 
+    id: 4, 
+    name: "Burak Şahin", 
+    skill: "Fotoğrafçılık", 
+    wantSkill: "Web Geliştirme", 
+    avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=80&h=80&fit=crop", 
+    rating: 4.8, sessions: 11, distance: "2.0km", online: true, match: 85, 
+    university: "Kırklareli Üniversitesi", status: "accepted" 
+  },
+  { 
+    id: 5, 
+    name: "Selin Öztürk", 
+    skill: "İstatistik & Excel", 
+    wantSkill: "Tasarım", 
+    avatar: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=80&h=80&fit=crop", 
+    rating: 4.9, sessions: 15, distance: "0.5km", online: false, match: 94, 
+    university: "Kırklareli Üniversitesi", status: "pending" 
+  },
+  { 
+    id: 6, 
+    name: "Emre Doğan", 
+    skill: "Gitar & Müzik Teorisi", 
+    wantSkill: "Matematik", 
+    avatar: "https://images.unsplash.com/photo-1463453091185-61582044d556?w=80&h=80&fit=crop", 
+    rating: 4.6, sessions: 9, distance: "3.2km", online: false, match: 78, 
+    university: "Kırklareli Üniversitesi", status: "nearby" 
+  },
 ];
 
 type TabType = "recommended" | "pending" | "accepted" | "nearby";
-
-export function MatchesView() {
+interface MatchesViewProps {
+  onNavigate: (view: string) => void;
+}
+export function MatchesView({ onNavigate }: MatchesViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>("recommended");
   const [selectedMatch, setSelectedMatch] = useState<typeof ALL_MATCHES[0] | null>(null);
 
@@ -134,13 +184,16 @@ export function MatchesView() {
                       </>
                     ) : (
                       <>
-                        <button className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                        <button onClick={(e) => { e.stopPropagation(); onNavigate("messages"); }}
+                          className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
                           <MessageSquare size={14} />
                         </button>
-                        <button className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 transition-colors">
+                        <button onClick={(e) => { e.stopPropagation(); onNavigate("calendar"); }}
+                          className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 transition-colors">
                           <Calendar size={14} />
                         </button>
                       </>
+                    
                     )}
                   </div>
                 </div>
@@ -195,10 +248,12 @@ export function MatchesView() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <button className="py-2.5 rounded-xl text-sm font-semibold border border-border hover:bg-muted transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => onNavigate("messages")}
+                className="py-2.5 rounded-xl text-sm font-semibold border border-border hover:bg-muted transition-all flex items-center justify-center gap-1.5">
                 <MessageSquare size={14} /> Message
               </button>
-              <button className="py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-1.5"
+              <button onClick={() => onNavigate("calendar")}
+                className="py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-1.5"
                 style={{ background: "var(--sb-gradient)" }}>
                 <Calendar size={14} /> Schedule
               </button>
