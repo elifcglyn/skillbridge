@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   User, Users, MessageSquare, Calendar, Bell, Star, BarChart2,
   Settings, LogOut, Sun, Moon, Menu, Home,
-  Zap, Search
+  Zap, Search, Sparkles, Award
 } from "lucide-react";
 import { supabase } from '@/lib/supabase'; // Supabase bağlantısı
 import {
