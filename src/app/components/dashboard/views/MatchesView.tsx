@@ -64,21 +64,30 @@ interface MatchesViewProps {
   onNavigate: (view: string) => void;
 }
 export function MatchesView({ onNavigate }: MatchesViewProps) {
+  const [matches, setMatches] = useState(ALL_MATCHES);
   const [activeTab, setActiveTab] = useState<TabType>("recommended");
   const [selectedMatch, setSelectedMatch] = useState<typeof ALL_MATCHES[0] | null>(null);
 
+  const handleAccept = (id: number) => {
+    setMatches(prev => prev.map(m => m.id === id ? { ...m, status: "accepted" } : m));
+  };
+
+  const handleReject = (id: number) => {
+    setMatches(prev => prev.map(m => m.id === id ? { ...m, status: "rejected" } : m));
+  };
   const tabs: { id: TabType; label: string; count: number }[] = [
-    { id: "recommended", label: "AI Picks", count: 6 },
-    { id: "pending", label: "Pending", count: 3 },
-    { id: "accepted", label: "Connected", count: 2 },
-    { id: "nearby", label: "Nearby", count: 4 },
+    { id: "recommended", label: "AI Picks", count: matches.filter(m => m.status !== "rejected").length },
+    { id: "pending", label: "Pending", count: matches.filter(m => m.status === "pending").length },
+    { id: "accepted", label: "Connected", count: matches.filter(m => m.status === "accepted").length },
+    { id: "nearby", label: "Nearby", count: matches.filter(m => parseFloat(m.distance) < 3 && m.status !== "rejected").length },
   ];
 
-  const filtered = ALL_MATCHES.filter(m => {
+  const filtered = matches.filter(m => {
+    if (m.status === "rejected") return false; // Reddedilenler hiçbir yerde görünmez
     if (activeTab === "pending") return m.status === "pending";
     if (activeTab === "accepted") return m.status === "accepted";
     if (activeTab === "nearby") return parseFloat(m.distance) < 3;
-    return true;
+    return m.status !== "pending"; // "AI Picks" sekmesinde bekleyenler de gösterilsin ama istersen kaldırabiliriz
   });
 
   return (
@@ -175,10 +184,12 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
                   <div className="flex gap-1.5">
                     {match.status === "pending" ? (
                       <>
-                        <button className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors">
+                        <button onClick={(e) => { e.stopPropagation(); handleAccept(match.id); }}
+                          className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors">
                           <Check size={14} />
                         </button>
-                        <button className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
+                        <button onClick={(e) => { e.stopPropagation(); handleReject(match.id); }}
+                          className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
                           <X size={14} />
                         </button>
                       </>
