@@ -4,8 +4,6 @@ import {
   Users,
   MessageSquare,
   Calendar,
-  Award,
-  Zap,
   Star,
   Bell,
   Check,
@@ -32,26 +30,26 @@ interface NotificationsViewProps {
     notificationId: string,
     actionStatus: Extract<NotificationActionStatus, "accepted" | "declined">
   ) => Promise<void> | void;
+  onNotificationOpen: (notification: SkillBridgeNotification) => Promise<void> | void;
 }
 
-type FilterId = "all" | "matches" | "messages" | "achievements" | "sessions";
+type FilterId = "all" | "matches" | "messages" | "feedback" | "sessions" | "system";
 
 const FILTERS: { id: FilterId; label: string; types?: NotificationType[] }[] = [
   { id: "all", label: "All" },
-  { id: "matches", label: "Matches", types: ["match"] },
-  { id: "messages", label: "Messages", types: ["message"] },
-  { id: "achievements", label: "Achievements", types: ["achievement", "points", "review"] },
-  { id: "sessions", label: "Sessions", types: ["session"] },
+  { id: "matches", label: "Matches", types: ["MATCH"] },
+  { id: "messages", label: "Messages", types: ["MESSAGE"] },
+  { id: "sessions", label: "Sessions", types: ["SESSION"] },
+  { id: "feedback", label: "Feedback", types: ["FEEDBACK"] },
+  { id: "system", label: "System", types: ["SYSTEM"] },
 ];
 
 const NOTIFICATION_CONFIG: Record<NotificationType, { icon: LucideIcon; color: string }> = {
-  match: { icon: Users, color: "#4338ca" },
-  message: { icon: MessageSquare, color: "#7c3aed" },
-  session: { icon: Calendar, color: "#06b6d4" },
-  achievement: { icon: Award, color: "#f59e0b" },
-  points: { icon: Zap, color: "#10b981" },
-  review: { icon: Star, color: "#ec4899" },
-  suggestion: { icon: Bell, color: "#6366f1" },
+  MATCH: { icon: Users, color: "#4338ca" },
+  MESSAGE: { icon: MessageSquare, color: "#7c3aed" },
+  SESSION: { icon: Calendar, color: "#06b6d4" },
+  FEEDBACK: { icon: Star, color: "#ec4899" },
+  SYSTEM: { icon: Bell, color: "#6366f1" },
 };
 
 const MINUTE = 60 * 1000;
@@ -84,6 +82,7 @@ export function NotificationsView({
   onMarkAllRead,
   onDismiss,
   onActionStatusChange,
+  onNotificationOpen,
 }: NotificationsViewProps) {
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [workingNotificationId, setWorkingNotificationId] = useState<string | null>(null);
@@ -202,7 +201,7 @@ export function NotificationsView({
           {filteredNotifications.map((notification, index) => {
             const config = NOTIFICATION_CONFIG[notification.type];
             const NotificationIcon = config.icon;
-            const isUnread = !notification.read_at;
+            const isUnread = !notification.is_read;
             const isWorking = workingNotificationId === notification.id;
 
             return (
@@ -211,6 +210,7 @@ export function NotificationsView({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
+                onClick={() => runNotificationAction(notification.id, () => onNotificationOpen(notification))}
                 className={`flex items-start gap-4 p-4 rounded-2xl border transition-all hover:shadow-sm cursor-pointer group ${
                   isUnread ? "border-primary/15 bg-primary/3" : "border-border bg-card"
                 }`}>
@@ -235,7 +235,7 @@ export function NotificationsView({
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <span className="font-semibold text-sm text-foreground">{notification.title}</span>
-                      <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">{notification.description}</p>
+                      <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">{notification.message}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1 flex-shrink-0">
                       <span className="text-xs text-muted-foreground whitespace-nowrap">{formatRelativeTime(notification.created_at)}</span>
@@ -264,7 +264,7 @@ export function NotificationsView({
                     </div>
                   </div>
 
-                  {notification.type === "match" && notification.action_status === "pending" && (
+                  {notification.type === "MATCH" && notification.action_status === "pending" && (
                     <div className="flex gap-2 mt-2">
                       <button
                         type="button"

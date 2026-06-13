@@ -3,15 +3,20 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   User, Users, MessageSquare, Calendar, Bell, Star, BarChart2,
   Settings, LogOut, Sun, Moon, Menu, Home,
-  Zap, Search, Sparkles, Award
+  Zap, Search, Sparkles
 } from "lucide-react";
 import { supabase } from '@/lib/supabase'; // Supabase bağlantısı
+import {
+  getHomeDashboard,
+  searchHomeDirectory,
+  type HomeDashboardData,
+  type HomeSearchResult,
+} from "@/lib/homeDashboard";
 import {
   dismissNotification,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
-  seedDevNotificationsIfNeeded,
   updateNotificationActionStatus,
   type NotificationActionStatus,
   type NotificationType,
@@ -34,8 +39,8 @@ const NAV_ITEMS = [
   { id: "home", icon: Home, label: "Ana Sayfa" },
   { id: "profile", icon: User, label: "Profilim" },
   { id: "findmatch", icon: Sparkles, label: "Eşleşme Bul" },
-  { id: "matches", icon: Users, label: "Eşleşmeler", badge: 3 },
-  { id: "messages", icon: MessageSquare, label: "Mesajlar", badge: 5 },
+  { id: "matches", icon: Users, label: "Eşleşmeler" },
+  { id: "messages", icon: MessageSquare, label: "Mesajlar" },
   { id: "calendar", icon: Calendar, label: "Takvim" },
   { id: "notifications", icon: Bell, label: "Bildirimler" },
   { id: "feedback", icon: Star, label: "Geri Bildirim" },
@@ -43,14 +48,24 @@ const NAV_ITEMS = [
 ];
 
 const NOTIFICATION_PREVIEW_CONFIG: Record<NotificationType, { icon: typeof Bell; color: string }> = {
-  match: { icon: Users, color: "#4338ca" },
-  message: { icon: MessageSquare, color: "#7c3aed" },
-  session: { icon: Calendar, color: "#06b6d4" },
-  achievement: { icon: Award, color: "#f59e0b" },
-  points: { icon: Zap, color: "#10b981" },
-  review: { icon: Star, color: "#ec4899" },
-  suggestion: { icon: Bell, color: "#6366f1" },
+  MATCH: { icon: Users, color: "#4338ca" },
+  MESSAGE: { icon: MessageSquare, color: "#7c3aed" },
+  SESSION: { icon: Calendar, color: "#06b6d4" },
+  FEEDBACK: { icon: Star, color: "#ec4899" },
+  SYSTEM: { icon: Bell, color: "#6366f1" },
 };
+
+const DASHBOARD_VIEW_IDS = new Set([
+  "home",
+  "profile",
+  "findmatch",
+  "matches",
+  "messages",
+  "calendar",
+  "notifications",
+  "feedback",
+  "progress",
+]);
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -82,6 +97,17 @@ function getErrorMessage(error: unknown) {
   return "Bildirimler yüklenirken bir hata oluştu.";
 }
 
+function getDashboardViewFromRelatedUrl(relatedUrl?: string | null) {
+  if (!relatedUrl) return null;
+
+  const normalizedUrl = relatedUrl.replace(/^\/+/, "").split(/[?#]/)[0];
+  const pathParts = normalizedUrl.split("/").filter(Boolean);
+  const candidate = pathParts[pathParts.length - 1] || normalizedUrl;
+
+  if (DASHBOARD_VIEW_IDS.has(candidate)) return candidate;
+  return null;
+}
+
 export function Dashboard({ onNavigate }: DashboardProps) {
   const [activeView, setActiveView] = useState("home");
   const [darkMode, setDarkMode] = useState(false);
@@ -96,17 +122,25 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [notifications, setNotifications] = useState<SkillBridgeNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [homeDashboard, setHomeDashboard] = useState<HomeDashboardData | null>(null);
+  const [homeDashboardLoading, setHomeDashboardLoading] = useState(false);
+  const [homeDashboardError, setHomeDashboardError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<HomeSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
-  const unreadNotificationsCount = notifications.filter(notification => !notification.read_at).length;
+  const unreadNotificationsCount = notifications.filter(notification => !notification.is_read).length;
   const visibleNotificationsCount = notifications.length;
   const recentNotifications = notifications.slice(0, 4);
+  const sidebarSkillPoints = homeDashboard?.sidebar.skillPoints ?? 0;
+  const sidebarNextLevelPoints = homeDashboard?.sidebar.nextLevelPoints ?? 0;
+  const sidebarSkillPointProgress = homeDashboard?.sidebar.skillPointProgress ?? 0;
 
   const loadUserNotifications = useCallback(async (userId: string) => {
     setNotificationsLoading(true);
     setNotificationsError(null);
 
     try {
-      await seedDevNotificationsIfNeeded(userId);
       const nextNotifications = await listNotifications(userId);
       setNotifications(nextNotifications);
     } catch (error) {
@@ -114,6 +148,23 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       setNotifications([]);
     } finally {
       setNotificationsLoading(false);
+    }
+  }, []);
+
+  const loadHomeDashboard = useCallback(async () => {
+    setHomeDashboardLoading(true);
+    setHomeDashboardError(null);
+
+    try {
+      const nextDashboard = await getHomeDashboard();
+      setHomeDashboard(nextDashboard);
+      setUserName(nextDashboard.user.fullName);
+      setUserSchoolInfo(nextDashboard.user.schoolInfo);
+    } catch (error) {
+      setHomeDashboardError(getErrorMessage(error));
+      setHomeDashboard(null);
+    } finally {
+      setHomeDashboardLoading(false);
     }
   }, []);
 
@@ -126,12 +177,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         setNotifications([]);
         setNotificationsLoading(false);
         setNotificationsError(null);
+        setHomeDashboard(null);
+        setHomeDashboardLoading(false);
+        setHomeDashboardError(null);
         return;
       }
 
       setNotificationUserId(user.id);
-      await loadUserNotifications(user.id);
-
       if (user && user.user_metadata) {
         // İsim Çekme
         const firstName = user.user_metadata.first_name || "";
@@ -145,9 +197,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           setUserSchoolInfo(`${university} ${department ? `· ${department}` : ''}`);
         }
       }
+
+      await Promise.all([
+        loadUserNotifications(user.id),
+        loadHomeDashboard(),
+      ]);
     }
     fetchActiveUser();
-  }, [loadUserNotifications]);
+  }, [loadHomeDashboard, loadUserNotifications]);
 
   useEffect(() => {
     if (!notificationsMenuOpen) return;
@@ -161,6 +218,36 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [notificationsMenuOpen]);
+
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (term.length < 2) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    let ignore = false;
+    setSearchLoading(true);
+
+    const timeoutId = window.setTimeout(() => {
+      searchHomeDirectory(term)
+        .then(results => {
+          if (!ignore) setSearchResults(results);
+        })
+        .catch(() => {
+          if (!ignore) setSearchResults([]);
+        })
+        .finally(() => {
+          if (!ignore) setSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchTerm]);
 
   const replaceNotification = (updatedNotification: SkillBridgeNotification) => {
     setNotifications(currentNotifications =>
@@ -188,6 +275,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       setNotifications(currentNotifications =>
         currentNotifications.map(notification => ({
           ...notification,
+          is_read: true,
           read_at: notification.read_at ?? readAt,
         }))
       );
@@ -229,6 +317,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     setNotificationsMenuOpen(false);
   };
 
+  const handleNotificationOpen = async (notification: SkillBridgeNotification) => {
+    if (!notification.is_read) {
+      await handleNotificationRead(notification.id);
+    }
+
+    const nextView = getDashboardViewFromRelatedUrl(notification.relatedUrl);
+    if (nextView) setActiveView(nextView);
+    else setActiveView("notifications");
+
+    setNotificationsMenuOpen(false);
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     onNavigate("landing"); // Çıkış yapınca ana sayfaya dön
@@ -241,7 +341,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const renderView = () => {
     switch (activeView) {
-      case "home": return <HomeView onNavigate={setActiveView} />;
+      case "home": return (
+        <HomeView
+          onNavigate={setActiveView}
+          dashboardData={homeDashboard}
+          loading={homeDashboardLoading}
+          error={homeDashboardError}
+          onRefresh={loadHomeDashboard}
+        />
+      );
       case "profile": return <ProfileView />;
       case "matches": return <MatchesView onNavigate={setActiveView} />;
       case "messages": return <MessagesView />;
@@ -258,12 +366,21 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           onMarkAllRead={handleAllNotificationsRead}
           onDismiss={handleNotificationDismiss}
           onActionStatusChange={handleNotificationActionStatus}
+          onNotificationOpen={handleNotificationOpen}
         />
       );
       case "feedback": return <FeedbackView />;
       case "progress": return <SkillProgressView />;
       case "findmatch": return <FindMatchView onNavigate={setActiveView} />;
-      default: return <HomeView onNavigate={setActiveView} />;
+      default: return (
+        <HomeView
+          onNavigate={setActiveView}
+          dashboardData={homeDashboard}
+          loading={homeDashboardLoading}
+          error={homeDashboardError}
+          onRefresh={loadHomeDashboard}
+        />
+      );
     }
   };
 
@@ -321,7 +438,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           <div className="space-y-0.5">
             {NAV_ITEMS.map(item => {
-              const itemBadge = item.id === "notifications" ? visibleNotificationsCount : item.badge;
+              const itemBadge = item.id === "notifications"
+                ? visibleNotificationsCount
+                : item.id === "matches"
+                  ? homeDashboard?.sidebar.matchCount
+                  : item.id === "messages"
+                    ? homeDashboard?.sidebar.messageCount
+                    : undefined;
 
               return (
                 <button key={item.id} onClick={() => { setActiveView(item.id); setSidebarOpen(false); }}
@@ -369,12 +492,19 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <Zap size={14} style={{ color: "var(--sb-cyan)" }} />
                 <span className="text-xs font-semibold" style={{ color: "var(--sidebar-foreground)" }}>Beceri Puanı</span>
               </div>
-              <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>2,450</span>
+              <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>
+                {sidebarSkillPoints.toLocaleString("en-US")}
+              </span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.1)" }}>
-              <div className="h-full rounded-full w-3/4" style={{ background: "var(--sb-gradient)" }} />
+              <div
+                className="h-full rounded-full"
+                style={{ background: "var(--sb-gradient)", width: `${sidebarSkillPointProgress}%` }}
+              />
             </div>
-            <div className="text-xs mt-1.5 opacity-50" style={{ color: "var(--sidebar-foreground)" }}>Sonraki seviyeye 550 puan</div>
+            <div className="text-xs mt-1.5 opacity-50" style={{ color: "var(--sidebar-foreground)" }}>
+              Sonraki seviyeye {sidebarNextLevelPoints.toLocaleString("en-US")} puan
+            </div>
           </div>
         </div>
       </aside>
@@ -390,7 +520,20 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <div className="flex-1" />
           <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-muted border border-border w-56">
             <Search size={15} className="text-muted-foreground flex-shrink-0" />
-            <input placeholder="Beceri, kişi ara..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 min-w-0" />
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              list="dashboard-search-results"
+              placeholder={searchLoading ? "Aranıyor..." : "Beceri, kişi ara..."}
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 min-w-0"
+            />
+            <datalist id="dashboard-search-results">
+              {searchResults.map(result => (
+                <option key={`${result.type}-${result.id}`} value={result.title}>
+                  {result.subtitle}
+                </option>
+              ))}
+            </datalist>
           </div>
           <div className="relative" ref={notificationsMenuRef}>
             <button
@@ -464,13 +607,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                       recentNotifications.map(notification => {
                         const config = NOTIFICATION_PREVIEW_CONFIG[notification.type];
                         const PreviewIcon = config.icon;
-                        const isUnread = !notification.read_at;
+                        const isUnread = !notification.is_read;
 
                         return (
                           <button
                             key={notification.id}
                             type="button"
-                            onClick={openNotificationsPage}
+                            onClick={() => handleNotificationOpen(notification)}
                             className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-colors hover:bg-muted ${
                               isUnread ? "bg-primary/5" : ""
                             }`}>
@@ -498,7 +641,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                                 </div>
                               </div>
                               <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                                {notification.description}
+                                {notification.message}
                               </div>
                             </div>
                           </button>

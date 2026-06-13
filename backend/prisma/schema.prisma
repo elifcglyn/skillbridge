@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserSkillType {
+  TEACH
+  LEARN
+}
+
+enum MatchStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  MATCH
+  MESSAGE
+  SESSION
+  FEEDBACK
+  SYSTEM
+}
+
+model Profile {
+  id              String   @id @db.Uuid
+  email           String   @default("")
+  fullName        String   @default("") @map("full_name")
+  firstName       String   @default("") @map("first_name")
+  lastName        String   @default("") @map("last_name")
+  avatarUrl       String?  @map("avatar_url")
+  bio             String   @default("")
+  school          String   @default("")
+  university      String   @default("")
+  department      String   @default("")
+  profession      String   @default("")
+  location        String   @default("")
+  role            String   @default("both")
+  profilePublic   Boolean  @default(true) @map("profile_public")
+  locationVisible Boolean  @default(true) @map("location_visible")
+  showOnline      Boolean  @default(true) @map("show_online")
+  isOnline        Boolean  @default(false) @map("is_online")
+  skillPoints     Int      @default(0) @map("skill_points")
+  trustScore      Decimal  @default(0.0) @map("trust_score") @db.Decimal(3, 1)
+  streakDays      Int      @default(0) @map("streak_days")
+  nextLevelPoints Int      @default(550) @map("next_level_points")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userSkills       UserSkill[]
+  requestedMatches Match[]            @relation("RequestedMatches")
+  receivedMatches  Match[]            @relation("ReceivedMatches")
+  sentMessages     Message[]          @relation("SentMessages")
+  reviewedFeedback Feedback[]         @relation("FeedbackReviewedUser")
+  writtenFeedback  Feedback[]         @relation("FeedbackReviewer")
+  notifications    Notification[]
+  learningActivity LearningActivity[]
+  pointEvents      PointEvent[]
+  achievements     UserAchievement[]
+
+  @@index([profilePublic, skillPoints(sort: Desc)], map: "profiles_public_points_idx")
+  @@map("profiles")
+}
+
+model Skill {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String      @unique
+  category    String      @default("")
+  description String      @default("")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  userSkills  UserSkill[]
+  matches     Match[]
+
+  @@index([category, name], map: "skills_category_name_idx")
+  @@map("skills")
+}
+
+model UserSkill {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String        @map("user_id") @db.Uuid
+  skillId           String        @map("skill_id") @db.Uuid
+  type              UserSkillType @default(TEACH)
+  level             String        @default("Beginner")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  name              String        @default("")
+  kind              String        @default("teaches")
+  progress          Int           @default(0)
+  sessionsCompleted Int           @default(0) @map("sessions_completed")
+  hoursTotal        Decimal       @default(0) @map("hours_total") @db.Decimal(6, 2)
+  color             String        @default("#4338ca")
+  sortOrder         Int           @default(0) @map("sort_order")
+
+  user             Profile            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill            Skill              @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  learningActivity LearningActivity[]
+
+  @@unique([userId, skillId, type], map: "user_skills_user_skill_type_idx")
+  @@index([userId, type, sortOrder, createdAt], map: "user_skills_user_type_order_idx")
+  @@index([userId, kind, sortOrder, createdAt], map: "user_skills_user_kind_order_idx")
+  @@map("user_skills")
+}
+
+model Match {
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requesterId      String      @map("requester_id") @db.Uuid
+  receiverId       String      @map("receiver_id") @db.Uuid
+  skillId          String      @map("skill_id") @db.Uuid
+  status           MatchStatus @default(PENDING)
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  userId           String?     @map("user_id") @db.Uuid
+  matchedUserId    String?     @map("matched_user_id") @db.Uuid
+  skillName        String      @default("") @map("skill_name")
+  matchedSkillName String      @default("") @map("matched_skill_name")
+  matchScore       Int         @default(0) @map("match_score")
+  distanceKm       Decimal?    @map("distance_km") @db.Decimal(6, 2)
+
+  requester    Profile       @relation("RequestedMatches", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver     Profile       @relation("ReceivedMatches", fields: [receiverId], references: [id], onDelete: Cascade)
+  skill        Skill         @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  conversation Conversation?
+  sessions     Session[]
+
+  @@index([requesterId, createdAt(sort: Desc)], map: "matches_requester_created_idx")
+  @@index([receiverId, createdAt(sort: Desc)], map: "matches_receiver_created_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "matches_user_created_idx")
+  @@index([matchedUserId, createdAt(sort: Desc)], map: "matches_matched_user_created_idx")
+  @@index([skillId, status], map: "matches_skill_status_idx")
+  @@map("matches")
+}
+
+model Conversation {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId   String    @unique @map("match_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  match     Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([createdAt(sort: Desc)], map: "conversations_created_idx")
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  senderId       String       @map("sender_id") @db.Uuid
+  content        String
+  isRead         Boolean      @default(false) @map("is_read")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         Profile      @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt], map: "messages_conversation_created_idx")
+  @@index([senderId, createdAt(sort: Desc)], map: "messages_sender_created_idx")
+  @@map("messages")
+}
+
+model Session {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId         String        @map("match_id") @db.Uuid
+  title           String
+  description     String        @default("")
+  scheduledAt     DateTime      @map("scheduled_at") @db.Timestamptz(6)
+  durationMinutes Int           @default(60) @map("duration_minutes")
+  status          SessionStatus @default(SCHEDULED)
+  meetingUrl      String?       @map("meeting_url")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  skillName       String        @default("") @map("skill_name")
+  mentorId        String?       @map("mentor_id") @db.Uuid
+  learnerId       String?       @map("learner_id") @db.Uuid
+  deliveryType    String        @default("video") @map("delivery_type")
+  color           String        @default("#4338ca")
+  emoji           String        @default("book")
+
+  match       Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  feedback    Feedback[]
+  pointEvents PointEvent[]
+
+  @@index([matchId, scheduledAt], map: "sessions_match_scheduled_idx")
+  @@index([mentorId, scheduledAt], map: "sessions_mentor_scheduled_idx")
+  @@index([learnerId, scheduledAt], map: "sessions_learner_scheduled_idx")
+  @@map("sessions")
+}
+
+model Feedback {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId      String   @map("session_id") @db.Uuid
+  reviewerId     String   @map("reviewer_id") @db.Uuid
+  reviewedUserId String   @map("reviewed_user_id") @db.Uuid
+  revieweeId     String?  @map("reviewee_id") @db.Uuid
+  rating         Int
+  comment        String   @default("")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session      Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  reviewer     Profile @relation("FeedbackReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewedUser Profile @relation("FeedbackReviewedUser", fields: [reviewedUserId], references: [id], onDelete: Cascade)
+
+  @@index([reviewedUserId, createdAt(sort: Desc)], map: "feedback_reviewed_user_created_idx")
+  @@index([revieweeId, createdAt(sort: Desc)], map: "reviews_reviewee_created_idx")
+  @@map("reviews")
+}
+
+model Notification {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  title          String
+  message        String
+  type           NotificationType
+  isRead         Boolean          @default(false) @map("is_read")
+  relatedUrl     String?          @map("related_url")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  description    String           @default("")
+  actorName      String?          @map("actor_name")
+  actorAvatarUrl String?          @map("actor_avatar_url")
+  actionStatus   String           @default("none") @map("action_status")
+  metadata       Json             @default("{}")
+  readAt         DateTime?        @map("read_at") @db.Timestamptz(6)
+  dismissedAt    DateTime?        @map("dismissed_at") @db.Timestamptz(6)
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "notifications_user_created_idx")
+  @@index([userId, isRead, createdAt(sort: Desc)], map: "notifications_user_read_created_idx")
+  @@index([userId, dismissedAt, createdAt(sort: Desc)], map: "notifications_user_visible_idx")
+  @@map("notifications")
+}
+
+model LearningActivity {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  userSkillId  String?  @map("skill_id") @db.Uuid
+  skillName    String   @default("") @map("skill_name")
+  activityDate DateTime @default(now()) @map("activity_date") @db.Date
+  hours        Decimal  @default(0) @db.Decimal(5, 2)
+  activityType String   @default("learning") @map("activity_type")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userSkill UserSkill? @relation(fields: [userSkillId], references: [id], onDelete: SetNull)
+
+  @@index([userId, activityDate], map: "learning_activity_user_date_idx")
+  @@map("learning_activity")
+}
+
+model PointEvent {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  points           Int
+  source           String   @default("manual")
+  description      String   @default("")
+  relatedSessionId String?  @map("related_session_id") @db.Uuid
+  occurredAt       DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  user           Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedSession Session? @relation(fields: [relatedSessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt(sort: Desc)], map: "point_events_user_occurred_idx")
+  @@map("point_events")
+}
+
+model UserAchievement {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  title           String
+  description     String    @default("")
+  progressCurrent Int       @default(0) @map("progress_current")
+  progressTarget  Int       @default(1) @map("progress_target")
+  color           String    @default("#f59e0b")
+  isActive        Boolean   @default(true) @map("is_active")
+  achievedAt      DateTime? @map("achieved_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive, createdAt(sort: Desc)], map: "user_achievements_user_active_idx")
+  @@map("user_achievements")
+}

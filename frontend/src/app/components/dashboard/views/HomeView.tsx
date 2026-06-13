@@ -1,108 +1,153 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
-  Zap, Users, Star, BookOpen,
+  Zap, Star, BookOpen,
   GraduationCap, Calendar, Award, Flame, ChevronRight, MapPin, MessageSquare
 } from "lucide-react";
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-import { supabase } from '@/lib/supabase';
+import { getHomeDashboard, type HomeDashboardData } from "@/lib/homeDashboard";
 
 interface HomeViewProps {
   onNavigate: (view: string) => void;
+  dashboardData?: HomeDashboardData | null;
+  loading?: boolean;
+  error?: string | null;
+  onRefresh?: () => void;
 }
 
-const RECENT_MATCHES = [
-  { 
-    name: "Ayşe Kara", 
-    skill: "React Geliştirme", 
-    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60&h=60&fit=crop", 
-    type: "mentor", rating: 4.9, distance: "0.3km", online: true 
-  },
-  { 
-    name: "Mert Yıldız", 
-    skill: "Python & Veri Analizi", 
-    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop", 
-    type: "learner", rating: 4.7, distance: "0.8km", online: false 
-  },
-  { 
-    name: "Zeynep Arslan", 
-    skill: "UI/UX Tasarım", 
-    avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=60&h=60&fit=crop", 
-    type: "mentor", rating: 5.0, distance: "1.1km", online: true 
-  },
-];
-const UPCOMING_SESSIONS = [
-  { title: "Python Temelleri", mentor: "Aria Chen", time: "Bugün, 15:00", color: "#4338ca", emoji: "🐍" },
-  { title: "Figma Atölyesi", mentor: "Zara Ahmed", time: "Yarın, 14:00", color: "#7c3aed", emoji: "🎨" },
-  { title: "Kariyer Sohbeti", mentor: "Carlos M.", time: "8 Haz, 11:00", color: "#06b6d4", emoji: "💼" },
-];
+function AvatarTile({ src, name, className }: { src?: string | null; name: string; className: string }) {
+  if (src) {
+    return <img src={src} alt={name} className={`${className} object-cover`} />;
+  }
 
-const learningData = [
-  { day: "Pzt", hours: 1.5 }, { day: "Sal", hours: 2.0 }, { day: "Çar", hours: 0.5 },
-  { day: "Per", hours: 3.0 }, { day: "Cum", hours: 2.5 }, { day: "Cmt", hours: 4.0 }, { day: "Paz", hours: 1.5 },
-];
-
-const skillData = [
-  { name: "React", progress: 67, fill: "#4338ca" },
-  { name: "İngilizce", progress: 45, fill: "#06b6d4" },
-  { name: "Tasarım", progress: 82, fill: "#7c3aed" },
-];
-
-const RAW_LEADERBOARD = [
-  { rank: 1, name: "Aria Chen", points: 4820, avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=40&h=40&fit=crop", badge: "🏆" },
-  { rank: 2, name: "Marcus Rivera", points: 4210, avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop", badge: "🥈" },
-  { rank: 3, name: "MOCK_KULLANICI", points: 2450, avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=40&h=40&fit=crop", badge: "🥉", isMe: true },
-  { rank: 4, name: "Zara Ahmed", points: 2280, avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop", badge: "" },
-  { rank: 5, name: "Leo Nakamura", points: 1950, avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop", badge: "" },
-];
-
-export function HomeView({ onNavigate }: HomeViewProps) {
-  // Supabase'den çekilecek dinamik kullanıcı adı için state
-  const [activeUserName, setActiveUserName] = useState("Öğrenci");
-
-  // Bileşen yüklendiğinde aktif kullanıcının adını getir
-  useEffect(() => {
-    async function fetchActiveUser() {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user && user.user_metadata) {
-        // Kayıt olurken user_metadata'ya yazdığımız first_name'i çekiyoruz
-        const firstName = user.user_metadata.first_name;
-        if (firstName) {
-          setActiveUserName(firstName);
-        }
-      }
-    }
-    fetchActiveUser();
-  }, []);
-
-  // Liderlik tablosunda "isMe: true" olan satıra dinamik ismimizi basıyoruz
-  const LEADERBOARD = RAW_LEADERBOARD.map(user => 
-    user.isMe ? { ...user, name: activeUserName } : user
+  return (
+    <div className={`${className} flex items-center justify-center text-white font-bold`} style={{ background: "var(--sb-gradient)" }}>
+      {name.charAt(0).toUpperCase()}
+    </div>
   );
+}
+
+function EmptyText({ children }: { children: string }) {
+  return (
+    <div className="py-6 text-center text-xs text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function getFallbackDashboard(): HomeDashboardData {
+  return {
+    user: {
+      id: "",
+      firstName: "Öğrenci",
+      fullName: "Öğrenci",
+      schoolInfo: "Üniversite Öğrencisi",
+      avatarUrl: null,
+      skillPoints: 0,
+      trustScore: 0,
+      streakDays: 0,
+      nextLevelPoints: 0,
+    },
+    stats: {
+      sessions: { value: "0", trend: "Bu hafta +0" },
+      teachingHours: { value: "0s", trend: "Bugün +0s" },
+      skillPoints: { value: "0", trend: "Bugün +0" },
+      trustScore: { value: "0", trend: "Top %0" },
+    },
+    weeklyLearning: {
+      totalHours: 0,
+      data: [
+        { day: "Pzt", hours: 0 },
+        { day: "Sal", hours: 0 },
+        { day: "Çar", hours: 0 },
+        { day: "Per", hours: 0 },
+        { day: "Cum", hours: 0 },
+        { day: "Cmt", hours: 0 },
+        { day: "Paz", hours: 0 },
+      ],
+    },
+    activeSkills: [],
+    nextAchievement: null,
+    recentMatches: [],
+    upcomingSessions: [],
+    leaderboard: [],
+    sidebar: {
+      matchCount: 0,
+      messageCount: 0,
+      skillPoints: 0,
+      nextLevelPoints: 0,
+      skillPointProgress: 0,
+    },
+  };
+}
+
+export function HomeView({ onNavigate, dashboardData, loading, error, onRefresh }: HomeViewProps) {
+  const [localData, setLocalData] = useState<HomeDashboardData | null>(null);
+  const [localLoading, setLocalLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const shouldLoadLocally = dashboardData === undefined && loading === undefined;
+
+  useEffect(() => {
+    if (!shouldLoadLocally) return;
+
+    let ignore = false;
+    setLocalLoading(true);
+    setLocalError(null);
+
+    getHomeDashboard()
+      .then((data) => {
+        if (!ignore) setLocalData(data);
+      })
+      .catch((loadError: Error) => {
+        if (!ignore) setLocalError(loadError.message);
+      })
+      .finally(() => {
+        if (!ignore) setLocalLoading(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [shouldLoadLocally]);
+
+  const data = dashboardData ?? localData ?? getFallbackDashboard();
+  const isLoading = loading ?? localLoading;
+  const loadError = error ?? localError;
+  const statCards = [
+    { label: "Görüşmeler", value: data.stats.sessions.value, icon: BookOpen, color: "#4338ca", trend: data.stats.sessions.trend },
+    { label: "Öğretim Saati", value: data.stats.teachingHours.value, icon: GraduationCap, color: "#7c3aed", trend: data.stats.teachingHours.trend },
+    { label: "Beceri Puanı", value: data.stats.skillPoints.value, icon: Zap, color: "#06b6d4", trend: data.stats.skillPoints.trend },
+    { label: "Güven Skoru", value: data.stats.trustScore.value, icon: Star, color: "#10b981", trend: data.stats.trustScore.trend },
+  ];
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
+      {loadError && (
+        <div className="p-3 rounded-2xl border border-red-200 bg-red-50 text-red-700 text-sm flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <button onClick={onRefresh} className="font-semibold hover:underline">Tekrar dene</button>
+        </div>
+      )}
+
       {/* Karşılama Başlığı */}
       <div className="flex items-start justify-between">
         <div>
           <div className="text-muted-foreground text-sm mb-1">İyi çalışmalar 👋</div>
-          <h1 className="text-2xl font-extrabold text-foreground">Tekrar hoş geldin, {activeUserName}!</h1>
+          <h1 className="text-2xl font-extrabold text-foreground">
+            Tekrar hoş geldin, {data.user.firstName}!
+          </h1>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-border bg-card">
           <Flame size={16} className="text-orange-500" />
-          <span className="text-sm font-bold text-foreground">12 günlük seri</span>
+          <span className="text-sm font-bold text-foreground">
+            {isLoading ? "..." : `${data.user.streakDays} günlük seri`}
+          </span>
         </div>
       </div>
 
       {/* İstatistik Satırı */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Görüşmeler", value: "24", icon: BookOpen, color: "#4338ca", trend: "Bu hafta +3" },
-          { label: "Öğretim Saati", value: "18s", icon: GraduationCap, color: "#7c3aed", trend: "Bugün +2s" },
-          { label: "Beceri Puanı", value: "2,450", icon: Zap, color: "#06b6d4", trend: "Bugün +180" },
-          { label: "Güven Skoru", value: "9.2", icon: Star, color: "#10b981", trend: "Top %15" },
-        ].map((stat, i) => (
+        {statCards.map((stat, i) => (
           <motion.div key={stat.label}
             initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
             className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-md transition-all">
@@ -110,9 +155,9 @@ export function HomeView({ onNavigate }: HomeViewProps) {
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${stat.color}14` }}>
                 <stat.icon size={20} style={{ color: stat.color }} />
               </div>
-              <span className="text-xs text-green-500 font-medium">{stat.trend}</span>
+              <span className="text-xs text-green-500 font-medium">{isLoading ? "..." : stat.trend}</span>
             </div>
-            <div className="text-2xl font-extrabold text-foreground mb-0.5">{stat.value}</div>
+            <div className="text-2xl font-extrabold text-foreground mb-0.5">{isLoading ? "..." : stat.value}</div>
             <div className="text-xs text-muted-foreground">{stat.label}</div>
           </motion.div>
         ))}
@@ -123,10 +168,12 @@ export function HomeView({ onNavigate }: HomeViewProps) {
         <div className="lg:col-span-2 p-5 rounded-2xl border border-border bg-card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-foreground">Bu Haftaki Öğrenim</h3>
-            <span className="text-xs text-muted-foreground">Toplam: 15s</span>
+            <span className="text-xs text-muted-foreground">
+              Toplam: {isLoading ? "..." : `${data.weeklyLearning.totalHours}s`}
+            </span>
           </div>
           <ResponsiveContainer width="100%" height={160}>
-            <AreaChart data={learningData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+            <AreaChart data={data.weeklyLearning.data} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
               <defs>
                 <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#4338ca" stopOpacity={0.3} />
@@ -148,8 +195,10 @@ export function HomeView({ onNavigate }: HomeViewProps) {
             <button onClick={() => onNavigate("progress")} className="text-xs text-primary font-medium hover:underline">Tümünü gör</button>
           </div>
           <div className="space-y-4">
-            {skillData.map(skill => (
-              <div key={skill.name}>
+            {data.activeSkills.length === 0 ? (
+              <EmptyText>Henüz aktif beceri kaydı yok.</EmptyText>
+            ) : data.activeSkills.map(skill => (
+              <div key={skill.id}>
                 <div className="flex items-center justify-between text-sm mb-1.5">
                   <span className="font-medium text-foreground">{skill.name}</span>
                   <span className="text-muted-foreground text-xs">{skill.progress}%</span>
@@ -167,11 +216,18 @@ export function HomeView({ onNavigate }: HomeViewProps) {
           <div className="mt-5 p-3 rounded-xl bg-muted/50 border border-border">
             <div className="flex items-center gap-2 mb-1">
               <Award size={14} className="text-yellow-500" />
-              <span className="text-xs font-bold text-foreground">Sıradaki Başarı</span>
+              <span className="text-xs font-bold text-foreground">
+                {data.nextAchievement?.title ?? "Sıradaki Başarı"}
+              </span>
             </div>
-            <div className="text-xs text-muted-foreground">"Kod Ninjası" rozeti için 5 React görüşmesi daha tamamla</div>
+            <div className="text-xs text-muted-foreground">
+              {data.nextAchievement?.description ?? "Aktif başarı hedefin oluştuğunda burada görünecek."}
+            </div>
             <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-muted">
-              <div className="h-full rounded-full bg-yellow-400 w-3/5" />
+              <div
+                className="h-full rounded-full bg-yellow-400"
+                style={{ width: `${data.nextAchievement?.progressPercent ?? 0}%` }}
+              />
             </div>
           </div>
         </div>
@@ -187,11 +243,13 @@ export function HomeView({ onNavigate }: HomeViewProps) {
             </button>
           </div>
           <div className="space-y-3">
-            {RECENT_MATCHES.map((match, i) => (
-              <motion.div key={match.name} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
+            {data.recentMatches.length === 0 ? (
+              <EmptyText>Yeni eşleşme bulunmuyor.</EmptyText>
+            ) : data.recentMatches.map((match, i) => (
+              <motion.div key={match.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
                 className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 cursor-pointer transition-all group">
                 <div className="relative flex-shrink-0">
-                  <img src={match.avatar} alt={match.name} className="w-11 h-11 rounded-xl object-cover" />
+                  <AvatarTile src={match.avatar} name={match.name} className="w-11 h-11 rounded-xl" />
                   {match.online && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-card" />}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -203,10 +261,10 @@ export function HomeView({ onNavigate }: HomeViewProps) {
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                  <button onClick={() => onNavigate("messages")} className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
                     <MessageSquare size={13} />
                   </button>
-                  <button className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors">
+                  <button onClick={() => onNavigate("calendar")} className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors">
                     <Calendar size={13} />
                   </button>
                 </div>
@@ -224,19 +282,25 @@ export function HomeView({ onNavigate }: HomeViewProps) {
               <button onClick={() => onNavigate("calendar")} className="text-xs text-primary font-medium hover:underline">Takvim</button>
             </div>
             <div className="space-y-2.5">
-              {UPCOMING_SESSIONS.map((session, i) => (
-                <div key={session.title} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 cursor-pointer transition-all">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-                    style={{ background: `${session.color}14` }}>
-                    {session.emoji}
+              {data.upcomingSessions.length === 0 ? (
+                <EmptyText>Yaklaşan görüşme bulunmuyor.</EmptyText>
+              ) : data.upcomingSessions.map((session) => {
+                const [dateLabel, timeLabel = ""] = session.time.split(",").map(part => part.trim());
+
+                return (
+                  <div key={session.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 cursor-pointer transition-all">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                      style={{ background: `${session.color}14` }}>
+                      {session.emoji}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm text-foreground truncate">{session.title}</div>
+                      <div className="text-xs text-muted-foreground">{session.mentor} ile</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground text-right whitespace-nowrap">{dateLabel}<br />{timeLabel}</div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm text-foreground truncate">{session.title}</div>
-                    <div className="text-xs text-muted-foreground">{session.mentor} ile</div>
-                  </div>
-                  <div className="text-xs text-muted-foreground text-right whitespace-nowrap">{session.time.split(",")[0]}<br />{session.time.split(",")[1]}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -247,15 +311,17 @@ export function HomeView({ onNavigate }: HomeViewProps) {
               <span className="text-xs text-muted-foreground">Bu hafta</span>
             </div>
             <div className="space-y-2">
-              {LEADERBOARD.map(user => (
-                <div key={user.rank}
+              {data.leaderboard.length === 0 ? (
+                <EmptyText>Liderlik verisi henüz oluşmadı.</EmptyText>
+              ) : data.leaderboard.map(user => (
+                <div key={user.id}
                   className={`flex items-center gap-3 p-2.5 rounded-xl transition-all ${user.isMe ? "border-2 border-primary/30 bg-primary/5" : "hover:bg-muted/50"}`}>
                   <span className="text-sm font-bold text-muted-foreground w-4">{user.badge || `#${user.rank}`}</span>
-                  <img src={user.avatar} alt={user.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                  <AvatarTile src={user.avatar} name={user.name} className="w-7 h-7 rounded-full flex-shrink-0" />
                   <span className={`flex-1 text-sm font-medium truncate ${user.isMe ? "text-primary" : "text-foreground"}`}>
                     {user.name}{user.isMe ? " (Sen)" : ""}
                   </span>
-                  <span className="text-xs font-bold text-muted-foreground">{user.points.toLocaleString()}</span>
+                  <span className="text-xs font-bold text-muted-foreground">{user.points.toLocaleString("en-US")}</span>
                 </div>
               ))}
             </div>
