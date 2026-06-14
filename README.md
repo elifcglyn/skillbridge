@@ -86,7 +86,15 @@ VITE_SUPABASE_ANON_KEY="<SUPABASE_PUBLISHABLE_OR_ANON_KEY>"
 Backend variables:
 
 ```bash
-DATABASE_URL="postgresql://<USER>:<PASSWORD>@<HOST>:5432/<DATABASE>"
+# Runtime Prisma Client connection. Supabase transaction pooler (:6543) is OK here.
+DATABASE_URL="postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-<REGION>.pooler.supabase.com:6543/postgres?pgbouncer=true"
+
+# Prisma CLI and migrations must not use the transaction pooler.
+# Prefer Supabase's direct connection. If that endpoint is not reachable from your network,
+# use the Supabase session pooler on port 5432 instead.
+DIRECT_URL="postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres"
+# DIRECT_URL="postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-<REGION>.pooler.supabase.com:5432/postgres"
+
 PORT="4000"
 CORS_ORIGIN="http://localhost:5173"
 ```
@@ -103,3 +111,5 @@ Open pull requests into `develop`, test locally, then merge tested releases into
 ## Database Notes
 
 Prisma owns the application schema in `backend/prisma/schema.prisma`. Supabase-specific SQL and legacy/reference migrations are kept under `backend/supabase/migrations`.
+
+With Prisma 7, `backend/prisma.config.ts` uses `DIRECT_URL` for Prisma CLI commands such as `migrate status`, `migrate dev`, and `migrate deploy`. Keep `DATABASE_URL` for application runtime traffic, and use Supabase's direct connection string for `DIRECT_URL`. If the direct endpoint is unavailable on your network, use the Supabase session pooler on port 5432 for `DIRECT_URL`; do not use the transaction pooler on port 6543 for migrations.
