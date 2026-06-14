@@ -26,6 +26,7 @@ export default defineConfig({
     `,
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // Prisma CLI/migrations need a direct PostgreSQL connection, not the Supabase transaction pooler.
+    url: env("DIRECT_URL"),
   },
 });

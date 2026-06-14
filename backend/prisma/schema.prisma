@@ -4,11 +4,14 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["public", "auth"]
 }
 
 enum UserSkillType {
   TEACH
   LEARN
+
+  @@schema("public")
 }
 
 enum MatchStatus {
@@ -16,12 +19,16 @@ enum MatchStatus {
   ACCEPTED
   REJECTED
   CANCELLED
+
+  @@schema("public")
 }
 
 enum SessionStatus {
   SCHEDULED
   COMPLETED
   CANCELLED
+
+  @@schema("public")
 }
 
 enum NotificationType {
@@ -30,6 +37,8 @@ enum NotificationType {
   SESSION
   FEEDBACK
   SYSTEM
+
+  @@schema("public")
 }
 
 model Profile {
@@ -70,6 +79,7 @@ model Profile {
 
   @@index([profilePublic, skillPoints(sort: Desc)], map: "profiles_public_points_idx")
   @@map("profiles")
+  @@schema("public")
 }
 
 model Skill {
@@ -83,6 +93,7 @@ model Skill {
 
   @@index([category, name], map: "skills_category_name_idx")
   @@map("skills")
+  @@schema("public")
 }
 
 model UserSkill {
@@ -109,6 +120,7 @@ model UserSkill {
   @@index([userId, type, sortOrder, createdAt], map: "user_skills_user_type_order_idx")
   @@index([userId, kind, sortOrder, createdAt], map: "user_skills_user_kind_order_idx")
   @@map("user_skills")
+  @@schema("public")
 }
 
 model Match {
@@ -138,6 +150,7 @@ model Match {
   @@index([matchedUserId, createdAt(sort: Desc)], map: "matches_matched_user_created_idx")
   @@index([skillId, status], map: "matches_skill_status_idx")
   @@map("matches")
+  @@schema("public")
 }
 
 model Conversation {
@@ -150,6 +163,7 @@ model Conversation {
 
   @@index([createdAt(sort: Desc)], map: "conversations_created_idx")
   @@map("conversations")
+  @@schema("public")
 }
 
 model Message {
@@ -165,6 +179,7 @@ model Message {
   @@index([conversationId, createdAt], map: "messages_conversation_created_idx")
   @@index([senderId, createdAt(sort: Desc)], map: "messages_sender_created_idx")
   @@map("messages")
+  @@schema("public")
 }
 
 model Session {
@@ -193,6 +208,7 @@ model Session {
   @@index([mentorId, scheduledAt], map: "sessions_mentor_scheduled_idx")
   @@index([learnerId, scheduledAt], map: "sessions_learner_scheduled_idx")
   @@map("sessions")
+  @@schema("public")
 }
 
 model Feedback {
@@ -212,6 +228,7 @@ model Feedback {
   @@index([reviewedUserId, createdAt(sort: Desc)], map: "feedback_reviewed_user_created_idx")
   @@index([revieweeId, createdAt(sort: Desc)], map: "reviews_reviewee_created_idx")
   @@map("reviews")
+  @@schema("public")
 }
 
 model Notification {
@@ -237,6 +254,7 @@ model Notification {
   @@index([userId, isRead, createdAt(sort: Desc)], map: "notifications_user_read_created_idx")
   @@index([userId, dismissedAt, createdAt(sort: Desc)], map: "notifications_user_visible_idx")
   @@map("notifications")
+  @@schema("public")
 }
 
 model LearningActivity {
@@ -254,6 +272,7 @@ model LearningActivity {
 
   @@index([userId, activityDate], map: "learning_activity_user_date_idx")
   @@map("learning_activity")
+  @@schema("public")
 }
 
 model PointEvent {
@@ -270,6 +289,7 @@ model PointEvent {
 
   @@index([userId, occurredAt(sort: Desc)], map: "point_events_user_occurred_idx")
   @@map("point_events")
+  @@schema("public")
 }
 
 model UserAchievement {
@@ -289,4 +309,5 @@ model UserAchievement {
 
   @@index([userId, isActive, createdAt(sort: Desc)], map: "user_achievements_user_active_idx")
   @@map("user_achievements")
+  @@schema("public")
 }
