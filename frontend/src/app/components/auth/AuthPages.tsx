@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Eye, EyeOff, ArrowLeft, Mail, Lock, User, MapPin,
-  GraduationCap, Plus, X, Camera, Check, Loader2, BookOpen
+  GraduationCap, Plus, X, Camera, Check, Loader2,LoaderCircle,BookOpen
 } from "lucide-react";
 import { supabase } from '@/lib/supabase'; // Adım 1'de oluşturduğunuz dosya
 
@@ -195,7 +195,7 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
                 className="w-full py-3.5 rounded-xl font-semibold text-white shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70"
                 style={{ background: customGradient }}>
                 {loading ? <Loader2 size={18} className="animate-spin" /> : null}
-                {loading ? "Giriş yapılıyor..." : "Giriş Yap"}
+               {loading ? <LoaderCircle className="animate-spin" /> : <span>Giriş Yap</span>}
               </button>
             </div>
           </motion.div>

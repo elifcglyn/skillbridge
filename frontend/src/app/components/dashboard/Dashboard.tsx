@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   User, Users, MessageSquare, Calendar, Bell, Star, BarChart2,
@@ -6,22 +6,6 @@ import {
   Zap, Search, Sparkles
 } from "lucide-react";
 import { supabase } from '@/lib/supabase'; // Supabase bağlantısı
-import {
-  getHomeDashboard,
-  searchHomeDirectory,
-  type HomeDashboardData,
-  type HomeSearchResult,
-} from "@/lib/homeDashboard";
-import {
-  dismissNotification,
-  listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
-  updateNotificationActionStatus,
-  type NotificationActionStatus,
-  type NotificationType,
-  type SkillBridgeNotification,
-} from "@/lib/notifications";
 import { ProfileView } from "./views/ProfileView";
 import { MatchesView } from "./views/MatchesView";
 import { MessagesView } from "./views/MessagesView";
@@ -31,10 +15,12 @@ import { FeedbackView } from "./views/FeedbackView";
 import { SkillProgressView } from "./views/SkillProgressView";
 import { HomeView } from "./views/HomeView";
 import { FindMatchView } from "./views/FindMatchView";
+
 interface DashboardProps {
   onNavigate: (page: string) => void;
 }
 
+// Rozet (badge) değerlerini dinamik vereceğimiz için buradan sildik
 const NAV_ITEMS = [
   { id: "home", icon: Home, label: "Ana Sayfa" },
   { id: "profile", icon: User, label: "Profilim" },
@@ -47,291 +33,94 @@ const NAV_ITEMS = [
   { id: "progress", icon: BarChart2, label: "Gelişimim" },
 ];
 
-const NOTIFICATION_PREVIEW_CONFIG: Record<NotificationType, { icon: typeof Bell; color: string }> = {
-  MATCH: { icon: Users, color: "#4338ca" },
-  MESSAGE: { icon: MessageSquare, color: "#7c3aed" },
-  SESSION: { icon: Calendar, color: "#06b6d4" },
-  FEEDBACK: { icon: Star, color: "#ec4899" },
-  SYSTEM: { icon: Bell, color: "#6366f1" },
-};
-
-const DASHBOARD_VIEW_IDS = new Set([
-  "home",
-  "profile",
-  "findmatch",
-  "matches",
-  "messages",
-  "calendar",
-  "notifications",
-  "feedback",
-  "progress",
-]);
-
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-function formatNotificationPreviewTime(createdAt: string) {
-  const createdTime = new Date(createdAt).getTime();
-  const elapsed = Date.now() - createdTime;
-
-  if (!Number.isFinite(createdTime) || elapsed < MINUTE) return "now";
-  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}m`;
-  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h`;
-  if (elapsed < 7 * DAY) return `${Math.floor(elapsed / DAY)}d`;
-
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(createdAt));
-}
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-
-  if (error && typeof error === "object") {
-    const supabaseError = error as { message?: unknown; details?: unknown; hint?: unknown };
-    const parts = [supabaseError.message, supabaseError.details, supabaseError.hint]
-      .filter((part): part is string => typeof part === "string" && part.trim().length > 0);
-
-    if (parts.length > 0) return parts.join(" ");
-  }
-
-  return "Bildirimler yüklenirken bir hata oluştu.";
-}
-
-function getDashboardViewFromRelatedUrl(relatedUrl?: string | null) {
-  if (!relatedUrl) return null;
-
-  const normalizedUrl = relatedUrl.replace(/^\/+/, "").split(/[?#]/)[0];
-  const pathParts = normalizedUrl.split("/").filter(Boolean);
-  const candidate = pathParts[pathParts.length - 1] || normalizedUrl;
-
-  if (DASHBOARD_VIEW_IDS.has(candidate)) return candidate;
-  return null;
-}
-
 export function Dashboard({ onNavigate }: DashboardProps) {
   const [activeView, setActiveView] = useState("home");
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notificationsMenuOpen, setNotificationsMenuOpen] = useState(false);
-  const notificationsMenuRef = useRef<HTMLDivElement | null>(null);
   
   // Supabase'den çekilecek dinamik kullanıcı verileri
   const [userName, setUserName] = useState("Öğrenci");
   const [userSchoolInfo, setUserSchoolInfo] = useState("Üniversite Öğrencisi");
-  const [notificationUserId, setNotificationUserId] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<SkillBridgeNotification[]>([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
-  const [notificationsError, setNotificationsError] = useState<string | null>(null);
-  const [homeDashboard, setHomeDashboard] = useState<HomeDashboardData | null>(null);
-  const [homeDashboardLoading, setHomeDashboardLoading] = useState(false);
-  const [homeDashboardError, setHomeDashboardError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState<HomeSearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
 
-  const unreadNotificationsCount = notifications.filter(notification => !notification.is_read).length;
-  const visibleNotificationsCount = notifications.length;
-  const recentNotifications = notifications.slice(0, 4);
-  const sidebarSkillPoints = homeDashboard?.sidebar.skillPoints ?? 0;
-  const sidebarNextLevelPoints = homeDashboard?.sidebar.nextLevelPoints ?? 0;
-  const sidebarSkillPointProgress = homeDashboard?.sidebar.skillPointProgress ?? 0;
+  // CANLI ROZET SAYILARI İÇİN STATE
+  const [badgeCounts, setBadgeCounts] = useState({
+    matches: 0,
+    messages: 0,
+    notifications: 0
+  });
 
-  const loadUserNotifications = useCallback(async (userId: string) => {
-    setNotificationsLoading(true);
-    setNotificationsError(null);
-
-    try {
-      const nextNotifications = await listNotifications(userId);
-      setNotifications(nextNotifications);
-    } catch (error) {
-      setNotificationsError(getErrorMessage(error));
-      setNotifications([]);
-    } finally {
-      setNotificationsLoading(false);
-    }
-  }, []);
-
-  const loadHomeDashboard = useCallback(async () => {
-    setHomeDashboardLoading(true);
-    setHomeDashboardError(null);
-
-    try {
-      const nextDashboard = await getHomeDashboard();
-      setHomeDashboard(nextDashboard);
-      setUserName(nextDashboard.user.fullName);
-      setUserSchoolInfo(nextDashboard.user.schoolInfo);
-    } catch (error) {
-      setHomeDashboardError(getErrorMessage(error));
-      setHomeDashboard(null);
-    } finally {
-      setHomeDashboardLoading(false);
-    }
-  }, []);
-
+  // 1. Profil Bilgilerini Çekme
   useEffect(() => {
     async function fetchActiveUser() {
       const { data: { user } } = await supabase.auth.getUser();
       
-      if (!user) {
-        setNotificationUserId(null);
-        setNotifications([]);
-        setNotificationsLoading(false);
-        setNotificationsError(null);
-        setHomeDashboard(null);
-        setHomeDashboardLoading(false);
-        setHomeDashboardError(null);
-        return;
-      }
-
-      setNotificationUserId(user.id);
       if (user && user.user_metadata) {
-        // İsim Çekme
         const firstName = user.user_metadata.first_name || "";
         const lastName = user.user_metadata.last_name || "";
         if (firstName) setUserName(`${firstName} ${lastName}`.trim());
 
-        // Okul/Bölüm Çekme
         const university = user.user_metadata.university || "";
         const department = user.user_metadata.department || "";
         if (university) {
           setUserSchoolInfo(`${university} ${department ? `· ${department}` : ''}`);
         }
       }
-
-      await Promise.all([
-        loadUserNotifications(user.id),
-        loadHomeDashboard(),
-      ]);
     }
     fetchActiveUser();
-  }, [loadHomeDashboard, loadUserNotifications]);
+  }, []);
 
+  // 2. Canlı Sayıları Çekme ve Realtime Dinleme (Yeni Eklenen Kısım)
   useEffect(() => {
-    if (!notificationsMenuOpen) return;
+    async function fetchCounts() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const myId = user.id;
 
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!notificationsMenuRef.current?.contains(event.target as Node)) {
-        setNotificationsMenuOpen(false);
-      }
-    };
+      // Bekleyen Eşleşme İstekleri
+      const { count: matchCount } = await supabase
+        .from('connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', myId)
+        .eq('status', 'pending');
 
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [notificationsMenuOpen]);
+      // Okunmamış Mesajlar
+      const { count: msgCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', myId)
+        .eq('is_read', false);
 
-  useEffect(() => {
-    const term = searchTerm.trim();
-    if (term.length < 2) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      return;
+      // Okunmamış Bildirimler
+      const { count: notifCount } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', myId)
+        .eq('is_read', false);
+
+      setBadgeCounts({
+        matches: matchCount || 0,
+        messages: msgCount || 0,
+        notifications: notifCount || 0
+      });
     }
 
-    let ignore = false;
-    setSearchLoading(true);
+    fetchCounts();
 
-    const timeoutId = window.setTimeout(() => {
-      searchHomeDirectory(term)
-        .then(results => {
-          if (!ignore) setSearchResults(results);
-        })
-        .catch(() => {
-          if (!ignore) setSearchResults([]);
-        })
-        .finally(() => {
-          if (!ignore) setSearchLoading(false);
-        });
-    }, 250);
+    // Veritabanında bir değişiklik olduğunda (mesaj gelmesi vb.) sayıları otomatik yenile
+    const channel = supabase.channel('sidebar_badges')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, fetchCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, fetchCounts)
+      .subscribe();
 
     return () => {
-      ignore = true;
-      window.clearTimeout(timeoutId);
+      supabase.removeChannel(channel);
     };
-  }, [searchTerm]);
-
-  const replaceNotification = (updatedNotification: SkillBridgeNotification) => {
-    setNotifications(currentNotifications =>
-      currentNotifications.map(notification =>
-        notification.id === updatedNotification.id ? updatedNotification : notification
-      )
-    );
-  };
-
-  const handleNotificationRead = async (notificationId: string) => {
-    try {
-      const updatedNotification = await markNotificationRead(notificationId);
-      replaceNotification(updatedNotification);
-    } catch (error) {
-      setNotificationsError(getErrorMessage(error));
-    }
-  };
-
-  const handleAllNotificationsRead = async () => {
-    if (!notificationUserId) return;
-
-    try {
-      const readAt = new Date().toISOString();
-      await markAllNotificationsRead(notificationUserId);
-      setNotifications(currentNotifications =>
-        currentNotifications.map(notification => ({
-          ...notification,
-          is_read: true,
-          read_at: notification.read_at ?? readAt,
-        }))
-      );
-    } catch (error) {
-      setNotificationsError(getErrorMessage(error));
-    }
-  };
-
-  const handleNotificationDismiss = async (notificationId: string) => {
-    try {
-      await dismissNotification(notificationId);
-      setNotifications(currentNotifications =>
-        currentNotifications.filter(notification => notification.id !== notificationId)
-      );
-    } catch (error) {
-      setNotificationsError(getErrorMessage(error));
-    }
-  };
-
-  const handleNotificationActionStatus = async (
-    notificationId: string,
-    actionStatus: Extract<NotificationActionStatus, "accepted" | "declined">
-  ) => {
-    try {
-      const updatedNotification = await updateNotificationActionStatus(notificationId, actionStatus);
-      replaceNotification(updatedNotification);
-    } catch (error) {
-      setNotificationsError(getErrorMessage(error));
-    }
-  };
-
-  const refreshNotifications = () => {
-    if (!notificationUserId) return;
-    loadUserNotifications(notificationUserId);
-  };
-
-  const openNotificationsPage = () => {
-    setActiveView("notifications");
-    setNotificationsMenuOpen(false);
-  };
-
-  const handleNotificationOpen = async (notification: SkillBridgeNotification) => {
-    if (!notification.is_read) {
-      await handleNotificationRead(notification.id);
-    }
-
-    const nextView = getDashboardViewFromRelatedUrl(notification.relatedUrl);
-    if (nextView) setActiveView(nextView);
-    else setActiveView("notifications");
-
-    setNotificationsMenuOpen(false);
-  };
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    onNavigate("landing"); // Çıkış yapınca ana sayfaya dön
+    onNavigate("landing"); 
   };
 
   const toggleDark = () => {
@@ -341,46 +130,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const renderView = () => {
     switch (activeView) {
-      case "home": return (
-        <HomeView
-          onNavigate={setActiveView}
-          dashboardData={homeDashboard}
-          loading={homeDashboardLoading}
-          error={homeDashboardError}
-          onRefresh={loadHomeDashboard}
-        />
-      );
+      case "home": return <HomeView onNavigate={setActiveView} />;
       case "profile": return <ProfileView />;
       case "matches": return <MatchesView onNavigate={setActiveView} />;
       case "messages": return <MessagesView />;
       case "calendar": return <CalendarView />;
-      case "notifications": return (
-        <NotificationsView
-          notifications={notifications}
-          loading={notificationsLoading}
-          error={notificationsError}
-          isAuthenticated={Boolean(notificationUserId)}
-          unreadCount={unreadNotificationsCount}
-          onRefresh={refreshNotifications}
-          onMarkRead={handleNotificationRead}
-          onMarkAllRead={handleAllNotificationsRead}
-          onDismiss={handleNotificationDismiss}
-          onActionStatusChange={handleNotificationActionStatus}
-          onNotificationOpen={handleNotificationOpen}
-        />
-      );
+      case "notifications": return <div className="p-10 flex justify-center text-muted-foreground">Bildirim altyapısı API'ye bağlanıyor...</div>;
       case "feedback": return <FeedbackView />;
       case "progress": return <SkillProgressView />;
       case "findmatch": return <FindMatchView onNavigate={setActiveView} />;
-      default: return (
-        <HomeView
-          onNavigate={setActiveView}
-          dashboardData={homeDashboard}
-          loading={homeDashboardLoading}
-          error={homeDashboardError}
-          onRefresh={loadHomeDashboard}
-        />
-      );
+      default: return <HomeView onNavigate={setActiveView} />;
     }
   };
 
@@ -438,13 +197,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           <div className="space-y-0.5">
             {NAV_ITEMS.map(item => {
-              const itemBadge = item.id === "notifications"
-                ? visibleNotificationsCount
-                : item.id === "matches"
-                  ? homeDashboard?.sidebar.matchCount
-                  : item.id === "messages"
-                    ? homeDashboard?.sidebar.messageCount
-                    : undefined;
+              // Hangi menüde hangi sayının görüneceğini belirliyoruz
+              let currentBadge = 0;
+              if (item.id === "matches") currentBadge = badgeCounts.matches;
+              if (item.id === "messages") currentBadge = badgeCounts.messages;
+              if (item.id === "notifications") currentBadge = badgeCounts.notifications;
 
               return (
                 <button key={item.id} onClick={() => { setActiveView(item.id); setSidebarOpen(false); }}
@@ -456,11 +213,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <span className="flex-1 text-sm font-medium text-left" style={{ color: activeView === item.id ? "white" : "var(--sidebar-foreground)" }}>
                     {item.label}
                   </span>
-                  {itemBadge ? (
+                  
+                  {/* Sayı 0'dan büyükse rozeti göster */}
+                  {currentBadge > 0 && (
                     <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold min-w-[20px] text-center ${activeView === item.id ? "bg-white/20 text-white" : "bg-primary/20 text-primary"}`}>
-                      {itemBadge}
+                      {currentBadge}
                     </span>
-                  ) : null}
+                  )}
                 </button>
               );
             })}
@@ -492,19 +251,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <Zap size={14} style={{ color: "var(--sb-cyan)" }} />
                 <span className="text-xs font-semibold" style={{ color: "var(--sidebar-foreground)" }}>Beceri Puanı</span>
               </div>
-              <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>
-                {sidebarSkillPoints.toLocaleString("en-US")}
-              </span>
+              <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>2,450</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.1)" }}>
-              <div
-                className="h-full rounded-full"
-                style={{ background: "var(--sb-gradient)", width: `${sidebarSkillPointProgress}%` }}
-              />
+              <div className="h-full rounded-full w-3/4" style={{ background: "var(--sb-gradient)" }} />
             </div>
-            <div className="text-xs mt-1.5 opacity-50" style={{ color: "var(--sidebar-foreground)" }}>
-              Sonraki seviyeye {sidebarNextLevelPoints.toLocaleString("en-US")} puan
-            </div>
+            <div className="text-xs mt-1.5 opacity-50" style={{ color: "var(--sidebar-foreground)" }}>Sonraki seviyeye 550 puan</div>
           </div>
         </div>
       </aside>
@@ -520,150 +272,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <div className="flex-1" />
           <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-muted border border-border w-56">
             <Search size={15} className="text-muted-foreground flex-shrink-0" />
-            <input
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              list="dashboard-search-results"
-              placeholder={searchLoading ? "Aranıyor..." : "Beceri, kişi ara..."}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 min-w-0"
-            />
-            <datalist id="dashboard-search-results">
-              {searchResults.map(result => (
-                <option key={`${result.type}-${result.id}`} value={result.title}>
-                  {result.subtitle}
-                </option>
-              ))}
-            </datalist>
+            <input placeholder="Beceri, kişi ara..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 min-w-0" />
           </div>
-          <div className="relative" ref={notificationsMenuRef}>
-            <button
-              type="button"
-              onClick={() => setNotificationsMenuOpen(open => !open)}
-              className="relative p-2.5 rounded-xl hover:bg-muted transition-colors"
-              aria-haspopup="dialog"
-              aria-expanded={notificationsMenuOpen}
-              aria-label="Bildirimleri aç">
-              <Bell size={18} className="text-muted-foreground" />
-              {unreadNotificationsCount > 0 && (
-                <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
-              )}
-            </button>
-
-            <AnimatePresence>
-              {notificationsMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                  transition={{ duration: 0.16 }}
-                  className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card shadow-xl z-50 overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                    <div>
-                      <div className="text-sm font-extrabold text-foreground">Bildirimler</div>
-                      <div className="text-xs text-muted-foreground">
-                        {unreadNotificationsCount} okunmamış bildirim
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!notificationUserId || unreadNotificationsCount === 0}
-                      onClick={handleAllNotificationsRead}
-                      className="text-xs font-medium text-primary hover:underline disabled:opacity-40 disabled:pointer-events-none">
-                      Tümünü oku
-                    </button>
-                  </div>
-
-                  <div className="max-h-80 overflow-y-auto p-2">
-                    {notificationsLoading ? (
-                      <div className="space-y-2 p-2">
-                        {[0, 1, 2].map(index => (
-                          <div key={index} className="flex gap-3 p-2 rounded-xl animate-pulse">
-                            <div className="w-9 h-9 rounded-xl bg-muted" />
-                            <div className="flex-1 space-y-2">
-                              <div className="h-3 bg-muted rounded w-24" />
-                              <div className="h-3 bg-muted rounded w-full" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : notificationsError ? (
-                      <div className="p-3">
-                        <div className="text-sm font-semibold text-foreground">Bildirimler yüklenemedi.</div>
-                        <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{notificationsError}</div>
-                        <button
-                          type="button"
-                          onClick={refreshNotifications}
-                          className="mt-2 text-xs font-medium text-primary hover:underline">
-                          Tekrar dene
-                        </button>
-                      </div>
-                    ) : recentNotifications.length === 0 ? (
-                      <div className="p-5 text-center">
-                        <Bell size={24} className="mx-auto mb-2 text-muted-foreground" />
-                        <div className="text-sm font-semibold text-foreground">Bildirim yok</div>
-                        <div className="text-xs text-muted-foreground mt-1">Yeni güncellemeler burada görünecek.</div>
-                      </div>
-                    ) : (
-                      recentNotifications.map(notification => {
-                        const config = NOTIFICATION_PREVIEW_CONFIG[notification.type];
-                        const PreviewIcon = config.icon;
-                        const isUnread = !notification.is_read;
-
-                        return (
-                          <button
-                            key={notification.id}
-                            type="button"
-                            onClick={() => handleNotificationOpen(notification)}
-                            className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-colors hover:bg-muted ${
-                              isUnread ? "bg-primary/5" : ""
-                            }`}>
-                            <div className="relative flex-shrink-0">
-                              {notification.actor_avatar_url ? (
-                                <img
-                                  src={notification.actor_avatar_url}
-                                  alt={notification.actor_name ?? ""}
-                                  className="w-9 h-9 rounded-xl object-cover"
-                                />
-                              ) : (
-                                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${config.color}14` }}>
-                                  <PreviewIcon size={17} style={{ color: config.color }} />
-                                </div>
-                              )}
-                              {isUnread && (
-                                <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card" style={{ background: config.color }} />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <div className="text-sm font-semibold text-foreground truncate">{notification.title}</div>
-                                <div className="text-xs text-muted-foreground ml-auto flex-shrink-0">
-                                  {formatNotificationPreviewTime(notification.created_at)}
-                                </div>
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                                {notification.message}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <div className="px-3 py-2 border-t border-border bg-muted/30">
-                    <button
-                      type="button"
-                      onClick={openNotificationsPage}
-                      className="w-full py-2 rounded-xl text-sm font-semibold text-white"
-                      style={{ background: "var(--sb-gradient)" }}>
-                      Tüm bildirimleri gör
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-          {/* Üst bar profil resmi yerine dinamik baş harf */}
+          
+          <button onClick={() => setActiveView("notifications")} className="relative p-2.5 rounded-xl hover:bg-muted transition-colors">
+            <Bell size={18} className="text-muted-foreground" />
+            {/* Eğer okunmamış bildirim varsa kırmızı noktayı göster */}
+            {badgeCounts.notifications > 0 && (
+              <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+            )}
+          </button>
+          
           <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-white cursor-pointer border-2 border-primary/30" style={{ background: "var(--sb-gradient)" }}>
              {userName.charAt(0)}
           </div>
