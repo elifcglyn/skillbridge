@@ -5,25 +5,17 @@ export type NotificationActionStatus = "none" | "pending" | "accepted" | "declin
 
 interface NotificationRow {
   id: string;
-  user_id: string;
+  user_id?: string | null;
   type: string;
-  title: string;
-  message?: string | null;
-  description?: string | null;
-  actor_name?: string | null;
-  actor_avatar_url?: string | null;
-  action_status?: NotificationActionStatus | null;
-  metadata?: Record<string, unknown> | null;
+  content: string;
   is_read?: boolean | null;
-  related_url?: string | null;
-  read_at?: string | null;
   dismissed_at?: string | null;
   created_at: string;
 }
 
 export interface SkillBridgeNotification {
   id: string;
-  user_id: string;
+  user_id: string | null;
   type: NotificationType;
   title: string;
   message: string;
@@ -51,25 +43,33 @@ function normalizeNotificationType(type: string): NotificationType {
   return "SYSTEM";
 }
 
+function getNotificationTitle(type: NotificationType) {
+  if (type === "MATCH") return "Eşleşme bildirimi";
+  if (type === "MESSAGE") return "Yeni mesaj";
+  if (type === "SESSION") return "Görüşme bildirimi";
+  if (type === "FEEDBACK") return "Geri bildirim";
+  return "Bildirim";
+}
+
 function normalizeNotification(row: NotificationRow): SkillBridgeNotification {
-  const message = row.message || row.description || "";
-  const readAt = row.read_at ?? null;
+  const type = normalizeNotificationType(row.type);
+  const message = row.content || "";
 
   return {
     id: row.id,
-    user_id: row.user_id,
-    type: normalizeNotificationType(row.type),
-    title: row.title,
+    user_id: row.user_id ?? null,
+    type,
+    title: getNotificationTitle(type),
     message,
     description: message,
-    actor_name: row.actor_name ?? null,
-    actor_avatar_url: row.actor_avatar_url ?? null,
-    action_status: row.action_status ?? "none",
-    metadata: row.metadata ?? {},
-    is_read: row.is_read ?? Boolean(readAt),
-    relatedUrl: row.related_url ?? null,
-    related_url: row.related_url ?? null,
-    read_at: readAt,
+    actor_name: null,
+    actor_avatar_url: null,
+    action_status: "none",
+    metadata: {},
+    is_read: row.is_read ?? false,
+    relatedUrl: null,
+    related_url: null,
+    read_at: null,
     dismissed_at: row.dismissed_at ?? null,
     created_at: row.created_at,
   };
@@ -88,10 +88,9 @@ export async function listNotifications(userId: string) {
 }
 
 export async function markNotificationRead(notificationId: string) {
-  const readAt = new Date().toISOString();
   const { data, error } = await supabase
     .from("notifications")
-    .update({ is_read: true, read_at: readAt })
+    .update({ is_read: true })
     .eq("id", notificationId)
     .select()
     .single();
@@ -101,16 +100,15 @@ export async function markNotificationRead(notificationId: string) {
 }
 
 export async function markAllNotificationsRead(userId: string) {
-  const readAt = new Date().toISOString();
   const { error } = await supabase
     .from("notifications")
-    .update({ is_read: true, read_at: readAt })
+    .update({ is_read: true })
     .eq("user_id", userId)
     .eq("is_read", false)
     .is("dismissed_at", null);
 
   if (error) throw error;
-  return readAt;
+  return new Date().toISOString();
 }
 
 export async function dismissNotification(notificationId: string) {
@@ -129,13 +127,10 @@ export async function updateNotificationActionStatus(
   notificationId: string,
   actionStatus: Extract<NotificationActionStatus, "accepted" | "declined">,
 ) {
-  const readAt = new Date().toISOString();
   const { data, error } = await supabase
     .from("notifications")
     .update({
-      action_status: actionStatus,
       is_read: true,
-      read_at: readAt,
     })
     .eq("id", notificationId)
     .select()
