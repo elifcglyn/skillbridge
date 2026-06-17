@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import healthRoutes from "./routes/health.routes.js";
 import matchesRoutes from "./routes/matches.routes.js";
+import messagesRoutes from "./routes/messages.routes.js";
 
 const corsOrigin = process.env.CORS_ORIGIN;
 
@@ -17,5 +18,6 @@ app.use(express.json());
 
 app.use("/health", healthRoutes);
 app.use("/api/matches", matchesRoutes);
+app.use("/api/messages", messagesRoutes);
 
 export default app;
