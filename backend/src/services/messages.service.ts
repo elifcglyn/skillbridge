@@ -6,6 +6,11 @@ type GetMessagesHistoryParams = {
   limit?: number;
 };
 
+type MarkMessagesAsReadParams = {
+  userId: string;
+  otherUserId: string;
+};
+
 type MessageRow = {
   id: string;
   sender_id: string;
@@ -60,4 +65,23 @@ export async function getMessagesHistory({
     isRead: message.is_read,
     createdAt: message.created_at,
   }));
+}
+
+export async function markMessagesAsRead({
+  userId,
+  otherUserId,
+}: MarkMessagesAsReadParams) {
+  const prisma = getPrismaClient();
+
+  const updatedCount = await prisma.$executeRaw`
+    UPDATE public.messages
+    SET is_read = true
+    WHERE receiver_id::text = ${userId}
+      AND sender_id::text = ${otherUserId}
+      AND is_read = false;
+  `;
+
+  return {
+    updatedCount,
+  };
 }

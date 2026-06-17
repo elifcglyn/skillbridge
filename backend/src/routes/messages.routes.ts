@@ -1,8 +1,12 @@
 import { Router } from "express";
-import { getMessagesHistoryController } from "../controllers/messages.controller.js";
+import {
+  getMessagesHistoryController,
+  markMessagesAsReadController,
+} from "../controllers/messages.controller.js";
 
 const router = Router();
 
 router.get("/", getMessagesHistoryController);
+router.patch("/read", markMessagesAsReadController);
 
 export default router;

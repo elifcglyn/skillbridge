@@ -1,5 +1,8 @@
 import type { Request, Response } from "express";
-import { getMessagesHistory } from "../services/messages.service.js";
+import {
+  getMessagesHistory,
+  markMessagesAsRead,
+} from "../services/messages.service.js";
 
 export async function getMessagesHistoryController(
   request: Request,
@@ -42,6 +45,38 @@ export async function getMessagesHistoryController(
 
     return response.status(500).json({
       message: "Mesaj geçmişi alınırken bir hata oluştu.",
+    });
+  }
+}
+
+export async function markMessagesAsReadController(
+  request: Request,
+  response: Response,
+) {
+  try {
+    const userId = String(request.body?.userId ?? "").trim();
+    const otherUserId = String(request.body?.otherUserId ?? "").trim();
+
+    if (!userId || !otherUserId) {
+      return response.status(400).json({
+        message: "userId ve otherUserId body alanları zorunludur.",
+      });
+    }
+
+    const result = await markMessagesAsRead({
+      userId,
+      otherUserId,
+    });
+
+    return response.json({
+      message: "Mesajlar okundu olarak işaretlendi.",
+      updatedCount: result.updatedCount,
+    });
+  } catch (error) {
+    console.error("Mark messages as read endpoint error:", error);
+
+    return response.status(500).json({
+      message: "Mesajlar okundu yapılırken bir hata oluştu.",
     });
   }
 }
