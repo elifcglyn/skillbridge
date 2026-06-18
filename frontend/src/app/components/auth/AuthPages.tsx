@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Eye, EyeOff, ArrowLeft, Mail, Lock, User, MapPin,
+  Eye, EyeOff, ArrowLeft, Mail, Zap,Lock, User, MapPin,
   GraduationCap, Plus, X, Camera, Check, Loader2,LoaderCircle,BookOpen
 } from "lucide-react";
 import { supabase } from '@/lib/supabase'; // Adım 1'de oluşturduğunuz dosya
@@ -117,12 +117,9 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
     setList(list.filter(s => s !== skill));
   };
 
-  const Logo = () => (
-    <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate("landing")}>
-      <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg" style={{ background: customGradient }}>
-        <BookOpen className="text-white" size={18} />
-      </div>
-      <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-800 to-teal-700">
+ const Logo = () => (
+    <div className="cursor-pointer" onClick={() => onNavigate("landing")}>
+      <span className="text-2xl font-extrabold tracking-tight text-white">
         SkillBridge
       </span>
     </div>
@@ -132,27 +129,58 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
     return (
       <div className="min-h-screen flex">
         {/* Left panel */}
-        <div className="hidden lg:flex flex-col justify-between w-1/2 p-12 relative overflow-hidden bg-indigo-950">
-          <div className="absolute inset-0 opacity-30">
-            <div className="absolute top-20 right-20 w-64 h-64 rounded-full bg-indigo-600 blur-3xl" />
-            <div className="absolute bottom-20 left-20 w-64 h-64 rounded-full bg-teal-500 blur-3xl" />
-          </div>
-          <div className="relative z-10"><Logo /></div>
-          <div className="relative z-10">
-            <h2 className="text-4xl font-extrabold text-white mb-4 leading-tight">Öğrenme yolculuğuna tekrar hoş geldin</h2>
-            <p className="text-indigo-200 mb-8">Kampüsteki binlerce öğrenci şu an yeteneklerini paylaşıyor. Onlara katıl.</p>
-            <div className="grid grid-cols-2 gap-4">
-              {[["1.2K+", "Öğrenci"], ["340+", "Beceri"], ["8.9K+", "Görüşme"], ["96%", "Memnuniyet"]].map(([n, l]) => (
-                <div key={l} className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
-                  <div className="text-2xl font-extrabold text-white">{n}</div>
-                  <div className="text-indigo-200 text-sm">{l}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="relative z-10 text-indigo-400 text-sm">© 2026 SkillBridge</div>
-        </div>
+        <div className="flex-1 flex flex-col justify-between p-12 lg:p-20 text-white relative overflow-hidden bg-gradient-to-br from-[#1a1a40] to-[#0f0f2d]">
+  {/* Arka plan efekti */}
+  <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none" style={{ background: "radial-gradient(circle at top right, #6366f1, transparent)" }} />
+  
+  <div className="relative z-10">
+    {/* Logo kısmı: Artık kare kutu yok, sadece metin */}
+    <div className="mb-12">
+      <span className="text-2xl font-extrabold tracking-tight text-white cursor-pointer" onClick={() => onNavigate("landing")}>
+        SkillBridge
+      </span>
+    </div>
 
+    {/* Yeni Slogan */}
+    <h1 className="text-4xl lg:text-5xl font-extrabold leading-tight mb-6">
+      Birinin öğrenmek istediği şey, <br />
+      <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+        senin çoktan bildiğin bir şey olabilir.
+      </span>
+    </h1>
+    
+    <p className="text-white/70 text-lg mb-12 max-w-md leading-relaxed font-medium">
+      SkillBridge öğrencileri eşleştirir, bilgiyi ücretsiz ve sosyal hale getirir.
+    </p>
+
+    {/* Güven Vurgusu */}
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
+          <GraduationCap className="text-blue-400" />
+        </div>
+        <div>
+          <h3 className="font-bold">Ücretsiz Eğitim</h3>
+          <p className="text-sm text-white/60">Sınır yok, ücret yok. Sadece bilgi paylaşımı.</p>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
+          <Zap className="text-emerald-400" />
+        </div>
+        <div>
+          <h3 className="font-bold">SkillCoin Ekonomisi</h3>
+          <p className="text-sm text-white/60">Aktif oldukça kazan, özel etkinliklere eriş.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div className="relative z-10 text-white/40 text-sm font-medium">
+    © 2026 SkillBridge
+  </div>
+</div>
         {/* Right panel */}
         <div className="flex-1 flex items-center justify-center p-6 bg-slate-50">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">

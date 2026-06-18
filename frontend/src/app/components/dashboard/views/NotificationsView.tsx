@@ -36,12 +36,12 @@ interface NotificationsViewProps {
 type FilterId = "all" | "matches" | "messages" | "feedback" | "sessions" | "system";
 
 const FILTERS: { id: FilterId; label: string; types?: NotificationType[] }[] = [
-  { id: "all", label: "All" },
-  { id: "matches", label: "Matches", types: ["MATCH"] },
-  { id: "messages", label: "Messages", types: ["MESSAGE"] },
-  { id: "sessions", label: "Sessions", types: ["SESSION"] },
-  { id: "feedback", label: "Feedback", types: ["FEEDBACK"] },
-  { id: "system", label: "System", types: ["SYSTEM"] },
+  { id: "all", label: "Tümü" },
+  { id: "matches", label: "Eşleşmeler", types: ["MATCH"] },
+  { id: "messages", label: "Mesajlar", types: ["MESSAGE"] },
+  { id: "sessions", label: "Görüşmeler", types: ["SESSION"] },
+  { id: "feedback", label: "Geri Bildirim", types: ["FEEDBACK"] },
+  { id: "system", label: "Sistem", types: ["SYSTEM"] },
 ];
 
 const NOTIFICATION_CONFIG: Record<NotificationType, { icon: LucideIcon; color: string }> = {
@@ -60,16 +60,22 @@ function formatRelativeTime(createdAt: string) {
   const createdTime = new Date(createdAt).getTime();
   const elapsed = Date.now() - createdTime;
 
-  if (!Number.isFinite(createdTime) || elapsed < MINUTE) return "just now";
-  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)} min ago`;
-  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h ago`;
-  if (elapsed < 7 * DAY) return `${Math.floor(elapsed / DAY)}d ago`;
+  if (!Number.isFinite(createdTime) || elapsed < MINUTE) return "şimdi";
+  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)} dk önce`;
+  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)} sa önce`;
+  if (elapsed < 7 * DAY) return `${Math.floor(elapsed / DAY)} gün önce`;
 
-  return new Intl.DateTimeFormat("en", {
+  return new Intl.DateTimeFormat("tr-TR", {
     month: "short",
     day: "numeric",
   }).format(new Date(createdAt));
 }
+
+const ACTION_STATUS_LABELS: Partial<Record<NotificationActionStatus, string>> = {
+  accepted: "Kabul edildi",
+  declined: "Reddedildi",
+  cancelled: "İptal edildi",
+};
 
 export function NotificationsView({
   notifications,
@@ -86,6 +92,7 @@ export function NotificationsView({
 }: NotificationsViewProps) {
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [workingNotificationId, setWorkingNotificationId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const filteredNotifications = useMemo(() => {
     const activeFilterConfig = FILTERS.find(filter => filter.id === activeFilter);
@@ -94,13 +101,20 @@ export function NotificationsView({
     return notifications.filter(notification => activeFilterConfig.types?.includes(notification.type));
   }, [activeFilter, notifications]);
 
-  const unreadLabel = unreadCount === 1 ? "1 unread notification" : `${unreadCount} unread notifications`;
+  const unreadLabel = `${unreadCount} okunmamış bildirim`;
 
   const runNotificationAction = async (notificationId: string, action: () => Promise<void> | void) => {
     setWorkingNotificationId(notificationId);
+    setActionError(null);
 
     try {
       await action();
+    } catch (actionError) {
+      setActionError(
+        actionError instanceof Error
+          ? actionError.message
+          : "Bildirim işlemi tamamlanamadı.",
+      );
     } finally {
       setWorkingNotificationId(null);
     }
@@ -127,8 +141,8 @@ export function NotificationsView({
       return (
         <div className="p-6 rounded-2xl border border-border bg-card text-center">
           <Bell size={28} className="mx-auto mb-3 text-muted-foreground" />
-          <p className="text-sm font-semibold text-foreground">Sign in to see notifications</p>
-          <p className="text-sm text-muted-foreground mt-1">Your SkillBridge updates will appear here.</p>
+          <p className="text-sm font-semibold text-foreground">Bildirimleri görmek için giriş yapın</p>
+          <p className="text-sm text-muted-foreground mt-1">SkillBridge güncellemeleriniz burada görünür.</p>
         </div>
       );
     }
@@ -136,13 +150,13 @@ export function NotificationsView({
     if (error) {
       return (
         <div className="p-5 rounded-2xl border border-border bg-card">
-          <p className="text-sm font-semibold text-foreground">Notifications could not be loaded.</p>
+          <p className="text-sm font-semibold text-foreground">Bildirimler yüklenemedi.</p>
           <p className="text-sm text-muted-foreground mt-1">{error}</p>
           <button
             type="button"
             onClick={onRefresh}
             className="mt-3 text-sm text-primary font-medium hover:underline">
-            Try again
+            Tekrar dene
           </button>
         </div>
       );
@@ -152,8 +166,8 @@ export function NotificationsView({
       return (
         <div className="p-6 rounded-2xl border border-border bg-card text-center">
           <Bell size={28} className="mx-auto mb-3 text-muted-foreground" />
-          <p className="text-sm font-semibold text-foreground">No notifications here</p>
-          <p className="text-sm text-muted-foreground mt-1">New updates will show up in this list.</p>
+          <p className="text-sm font-semibold text-foreground">Burada bildirim yok</p>
+          <p className="text-sm text-muted-foreground mt-1">Yeni güncellemeler bu listede görünür.</p>
         </div>
       );
     }
@@ -167,7 +181,7 @@ export function NotificationsView({
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-xl font-extrabold text-foreground">Notifications</h2>
+          <h2 className="text-xl font-extrabold text-foreground">Bildirimler</h2>
           <p className="text-sm text-muted-foreground">{unreadLabel}</p>
         </div>
         <button
@@ -175,7 +189,7 @@ export function NotificationsView({
           disabled={!isAuthenticated || loading || unreadCount === 0 || workingNotificationId === "all"}
           onClick={() => runNotificationAction("all", onMarkAllRead)}
           className="text-sm text-primary font-medium hover:underline disabled:opacity-40 disabled:pointer-events-none">
-          Mark all read
+          Tümünü okundu işaretle
         </button>
       </div>
 
@@ -193,6 +207,12 @@ export function NotificationsView({
           </button>
         ))}
       </div>
+
+      {actionError && (
+        <div className="mb-4 p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-sm text-red-600">
+          {actionError}
+        </div>
+      )}
 
       {stateMessage ? (
         stateMessage
@@ -240,19 +260,23 @@ export function NotificationsView({
                     <div className="flex flex-col items-end gap-1 flex-shrink-0">
                       <span className="text-xs text-muted-foreground whitespace-nowrap">{formatRelativeTime(notification.created_at)}</span>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {isUnread && (
+                          <button
+                            type="button"
+                            disabled={isWorking}
+                            aria-label="Okundu işaretle"
+                            onClick={event => {
+                              event.stopPropagation();
+                              runNotificationAction(notification.id, () => onMarkRead(notification.id));
+                            }}
+                            className="p-1 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors disabled:opacity-40">
+                            <Check size={11} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={isWorking}
-                          onClick={event => {
-                            event.stopPropagation();
-                            runNotificationAction(notification.id, () => onMarkRead(notification.id));
-                          }}
-                          className="p-1 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors disabled:opacity-40">
-                          <Check size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isWorking}
+                          aria-label="Bildirimi kaldır"
                           onClick={event => {
                             event.stopPropagation();
                             runNotificationAction(notification.id, () => onDismiss(notification.id));
@@ -264,7 +288,7 @@ export function NotificationsView({
                     </div>
                   </div>
 
-                  {notification.type === "MATCH" && notification.action_status === "pending" && (
+                  {notification.type === "SESSION" && notification.action_status === "pending" && (
                     <div className="flex gap-2 mt-2">
                       <button
                         type="button"
@@ -275,7 +299,7 @@ export function NotificationsView({
                         }}
                         className="px-3 py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-40"
                         style={{ background: "var(--sb-gradient)" }}>
-                        Accept
+                        Kabul et
                       </button>
                       <button
                         type="button"
@@ -285,10 +309,16 @@ export function NotificationsView({
                           runNotificationAction(notification.id, () => onActionStatusChange(notification.id, "declined"));
                         }}
                         className="px-3 py-1 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:bg-muted transition-colors disabled:opacity-40">
-                        Decline
+                        Reddet
                       </button>
                     </div>
                   )}
+                  {notification.action_status !== "none" &&
+                    notification.action_status !== "pending" && (
+                      <span className="inline-flex mt-2 px-2.5 py-1 rounded-lg bg-muted text-xs font-medium text-muted-foreground">
+                        {ACTION_STATUS_LABELS[notification.action_status]}
+                      </span>
+                    )}
                 </div>
               </motion.div>
             );

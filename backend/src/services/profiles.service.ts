@@ -26,6 +26,7 @@ type ProfileRow = {
   learns: string[] | null;
   profile_public: boolean | null;
   skill_points: number | null;
+  coin_balance: number;
   created_at: Date;
 };
 
@@ -68,6 +69,7 @@ function normalizeProfile(row: ProfileRow) {
     learns: row.learns ?? [],
     profilePublic: row.profile_public ?? true,
     skillPoints: row.skill_points ?? 0,
+    coinBalance: row.coin_balance,
     createdAt: row.created_at,
   };
 }
@@ -88,6 +90,7 @@ export async function getProfile(userId: string) {
       learns,
       profile_public,
       skill_points,
+      coin_balance,
       created_at
     FROM public.profiles
     WHERE id::text = ${userId}
@@ -157,6 +160,7 @@ export async function upsertProfile(payload: ProfilePayload) {
       learns,
       profile_public,
       skill_points,
+      coin_balance,
       created_at;
   `;
 

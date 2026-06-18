@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { CheckCheck, Search, Send } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, Search, Send } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 type ProfileRow = {
@@ -8,6 +8,12 @@ type ProfileRow = {
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
+};
+
+type MatchRow = {
+  user_id: string | null;
+  matched_user_id: string | null;
+  status: string | null;
 };
 
 type MessageRow = {
@@ -23,7 +29,6 @@ type Conversation = {
   id: string;
   name: string;
   avatar: string;
-  online: boolean;
   lastMsg: string;
   time: string;
   lastMessageAt: string | null;
@@ -35,15 +40,18 @@ type ChatMessage = {
   from: "me" | "other";
   text: string;
   time: string;
+  createdAt: string;
+  isRead: boolean;
 };
 
 type MessagesViewProps = {
+  initialPeerId?: string | null;
   onMessagesRead?: () => void | Promise<void>;
 };
 
 function formatTime(value?: string | null) {
   if (!value) return "";
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(value).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 }
 
 function sortConversations(conversations: Conversation[]) {
@@ -61,19 +69,55 @@ function isBetweenUsers(message: MessageRow, firstUserId: string, secondUserId: 
   );
 }
 
+function profileName(profile: ProfileRow) {
+  return [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim() || "Kullanıcı";
+}
+
 function buildAvatar(profile: ProfileRow) {
-  const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim() || "User";
+  const name = profileName(profile);
   return profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`;
 }
 
-export function MessagesView({ onMessagesRead }: MessagesViewProps) {
+function toChatMessage(message: MessageRow, userId: string): ChatMessage {
+  return {
+    id: message.id,
+    from: message.sender_id === userId ? "me" : "other",
+    text: message.content || "",
+    time: formatTime(message.created_at),
+    createdAt: message.created_at,
+    isRead: message.is_read === true,
+  };
+}
+
+function upsertChatMessage(messages: ChatMessage[], nextMessage: ChatMessage) {
+  const existingIndex = messages.findIndex((message) => message.id === nextMessage.id);
+  const nextMessages = [...messages];
+
+  if (existingIndex >= 0) {
+    nextMessages[existingIndex] = nextMessage;
+  } else {
+    nextMessages.push(nextMessage);
+  }
+
+  return nextMessages.sort(
+    (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+}
+
+export function MessagesView({ initialPeerId, onMessagesRead }: MessagesViewProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [onlinePeerIds, setOnlinePeerIds] = useState<Set<string>>(new Set());
   const [loadingConv, setLoadingConv] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const markConversationRead = async (partnerId: string, userId = myUserId) => {
     if (!userId) return;
@@ -82,7 +126,8 @@ export function MessagesView({ onMessagesRead }: MessagesViewProps) {
       .from("messages")
       .update({ is_read: true })
       .eq("receiver_id", userId)
-      .eq("sender_id", partnerId);
+      .eq("sender_id", partnerId)
+      .eq("is_read", false);
 
     if (updateError) {
       setError(updateError.message);
@@ -92,111 +137,208 @@ export function MessagesView({ onMessagesRead }: MessagesViewProps) {
     setConversations((items) =>
       items.map((item) => (item.id === partnerId ? { ...item, unreadCount: 0 } : item)),
     );
+    setMessages((items) =>
+      items.map((item) => (item.from === "other" ? { ...item, isRead: true } : item)),
+    );
 
     await onMessagesRead?.();
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const initChat = async () => {
       setLoadingConv(true);
       setError(null);
 
-      const { data: authData } = await supabase.auth.getUser();
-      const user = authData.user;
-      if (!user) {
-        setLoadingConv(false);
-        return;
-      }
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      setMyUserId(user.id);
+        if (authError) throw authError;
+        if (!user || !mounted) return;
 
-      const [{ data: profiles, error: profilesError }, { data: allMyMessages, error: messagesError }] =
-        await Promise.all([
-          supabase
-            .from("profiles")
-            .select("id, first_name, last_name, avatar_url")
-            .not("id", "eq", user.id),
-          supabase
-            .from("messages")
-            .select("id,sender_id,receiver_id,content,created_at,is_read")
-            .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-            .order("created_at", { ascending: false }),
-        ]);
+        setMyUserId(user.id);
 
-      if (profilesError || messagesError) {
-        setError(profilesError?.message || messagesError?.message || "Mesajlar yüklenemedi.");
-        setLoadingConv(false);
-        return;
-      }
+        const { data: matchRows, error: matchesError } = await supabase
+          .from("matches")
+          .select("user_id,matched_user_id,status")
+          .or(`user_id.eq.${user.id},matched_user_id.eq.${user.id}`);
 
-      const messageRows = (allMyMessages ?? []) as MessageRow[];
-      const formatted = sortConversations(
-        ((profiles ?? []) as ProfileRow[]).map((profile) => {
-          const messagesWithProfile = messageRows.filter((row) => isBetweenUsers(row, user.id, profile.id));
-          const lastMessage = messagesWithProfile[0];
-          const unreadCount = messagesWithProfile.filter(
-            (row) => row.sender_id === profile.id && row.receiver_id === user.id && row.is_read !== true,
-          ).length;
-          const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim() || "Kullanıcı";
+        if (matchesError) throw matchesError;
 
-          return {
-            id: profile.id,
-            name,
-            avatar: buildAvatar(profile),
-            online: true,
-            lastMsg: lastMessage?.content || "Sohbeti başlatmak için tıklayın...",
-            time: formatTime(lastMessage?.created_at),
-            lastMessageAt: lastMessage?.created_at ?? null,
-            unreadCount,
-          };
-        }),
-      );
+        const peerIds = Array.from(
+          new Set(
+            ((matchRows ?? []) as MatchRow[])
+              .filter(
+                (match) =>
+                  !["rejected", "declined", "cancelled"].includes(
+                    (match.status || "recommended").toLowerCase(),
+                  ),
+              )
+              .map((match) => {
+                return match.user_id === user.id
+                  ? match.matched_user_id
+                  : match.user_id;
+              })
+              .filter((peerId): peerId is string => Boolean(peerId)),
+          ),
+        );
 
-      setConversations(formatted);
-
-      if (formatted.length > 0) {
-        const preferredPartnerId = localStorage.getItem("active_chat_partner_id");
-        const preferredConversation = formatted.find((conv) => conv.id === preferredPartnerId);
-        const firstUnreadConversation = formatted.find((conv) => conv.unreadCount > 0);
-        setActiveConv(preferredConversation || firstUnreadConversation || formatted[0]);
-
-        if (preferredPartnerId) {
-          localStorage.removeItem("active_chat_partner_id");
+        if (peerIds.length === 0) {
+          if (!mounted) return;
+          setConversations([]);
+          setActiveConv(null);
+          return;
         }
-      }
 
-      setLoadingConv(false);
+        const [{ data: profiles, error: profilesError }, { data: messageRows, error: messagesError }] =
+          await Promise.all([
+            supabase
+              .from("profiles")
+              .select("id,first_name,last_name,avatar_url")
+              .in("id", peerIds),
+            supabase
+              .from("messages")
+              .select("id,sender_id,receiver_id,content,created_at,is_read")
+              .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+              .order("created_at", { ascending: false }),
+          ]);
+
+        if (profilesError) throw profilesError;
+        if (messagesError) throw messagesError;
+        if (!mounted) return;
+
+        const profileById = new Map(
+          ((profiles ?? []) as ProfileRow[]).map((profile) => [profile.id, profile]),
+        );
+        const allMessages = (messageRows ?? []) as MessageRow[];
+        const formatted = sortConversations(
+          peerIds.map((peerId) => {
+            const profile =
+              profileById.get(peerId) ??
+              ({ id: peerId, first_name: null, last_name: null, avatar_url: null } satisfies ProfileRow);
+            const peerMessages = allMessages.filter((row) => isBetweenUsers(row, user.id, peerId));
+            const lastMessage = peerMessages[0];
+            const unreadCount = peerMessages.filter(
+              (row) => row.sender_id === peerId && row.receiver_id === user.id && row.is_read !== true,
+            ).length;
+
+            return {
+              id: peerId,
+              name: profileName(profile),
+              avatar: buildAvatar(profile),
+              lastMsg: lastMessage?.content || "Sohbeti başlatmak için tıklayın...",
+              time: formatTime(lastMessage?.created_at),
+              lastMessageAt: lastMessage?.created_at ?? null,
+              unreadCount,
+            };
+          }),
+        );
+
+        setConversations(formatted);
+
+        if (initialPeerId) {
+          const requestedConversation = formatted.find((conversation) => conversation.id === initialPeerId);
+
+          if (requestedConversation) {
+            setActiveConv(requestedConversation);
+            setMobileChatOpen(true);
+          } else {
+            setActiveConv(null);
+            setError("Bu kullanıcıyla mesajlaşmak için önce bir beceri eşleşmesi oluşturmalısınız.");
+          }
+        } else {
+          setActiveConv(
+            formatted.find((conversation) => conversation.unreadCount > 0) || formatted[0] || null,
+          );
+        }
+      } catch (loadError) {
+        if (mounted) {
+          setError(loadError instanceof Error ? loadError.message : "Mesajlar yüklenemedi.");
+        }
+      } finally {
+        if (mounted) setLoadingConv(false);
+      }
     };
 
     initChat();
-  }, []);
+
+    return () => {
+      mounted = false;
+    };
+  }, [initialPeerId]);
 
   useEffect(() => {
-    if (!myUserId || !activeConv?.id) return;
+    if (!myUserId) return;
+
+    const presenceChannel = supabase.channel("messages_presence", {
+      config: {
+        presence: {
+          key: myUserId,
+        },
+      },
+    });
+
+    const syncPresence = () => {
+      const presenceState = presenceChannel.presenceState();
+      setOnlinePeerIds(new Set(Object.keys(presenceState).filter((userId) => userId !== myUserId)));
+    };
+
+    presenceChannel
+      .on("presence", { event: "sync" }, syncPresence)
+      .on("presence", { event: "join" }, syncPresence)
+      .on("presence", { event: "leave" }, syncPresence)
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presenceChannel.track({
+            user_id: myUserId,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      presenceChannel.untrack();
+      supabase.removeChannel(presenceChannel);
+    };
+  }, [myUserId]);
+
+  useEffect(() => {
+    if (!myUserId || !activeConv?.id) {
+      setMessages([]);
+      return;
+    }
+
+    let mounted = true;
+    setLoadingMessages(true);
+    setError(null);
 
     const fetchMessageHistory = async () => {
-      setError(null);
-
       const { data: historyData, error: historyError } = await supabase
         .from("messages")
         .select("id,sender_id,receiver_id,content,created_at,is_read")
-        .or(`and(sender_id.eq.${myUserId},receiver_id.eq.${activeConv.id}),and(sender_id.eq.${activeConv.id},receiver_id.eq.${myUserId})`)
+        .or(
+          `and(sender_id.eq.${myUserId},receiver_id.eq.${activeConv.id}),and(sender_id.eq.${activeConv.id},receiver_id.eq.${myUserId})`,
+        )
         .order("created_at", { ascending: true });
+
+      if (!mounted) return;
 
       if (historyError) {
         setError(historyError.message);
+        setLoadingMessages(false);
         return;
       }
 
       setMessages(
-        ((historyData ?? []) as MessageRow[]).map((msg) => ({
-          id: msg.id,
-          from: msg.sender_id === myUserId ? "me" : "other",
-          text: msg.content || "",
-          time: formatTime(msg.created_at),
-        })),
+        ((historyData ?? []) as MessageRow[]).map((historyMessage) =>
+          toChatMessage(historyMessage, myUserId),
+        ),
       );
-
+      setLoadingMessages(false);
       await markConversationRead(activeConv.id, myUserId);
     };
 
@@ -205,178 +347,312 @@ export function MessagesView({ onMessagesRead }: MessagesViewProps) {
     const channel = supabase
       .channel(`chat_room_${myUserId}_${activeConv.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
-        const newMsg = payload.new as MessageRow;
+        const newMessage = payload.new as MessageRow;
         const peerId =
-          newMsg.sender_id === myUserId
-            ? newMsg.receiver_id
-            : newMsg.receiver_id === myUserId
-              ? newMsg.sender_id
+          newMessage.sender_id === myUserId
+            ? newMessage.receiver_id
+            : newMessage.receiver_id === myUserId
+              ? newMessage.sender_id
               : null;
 
-        if (!peerId) return;
+        if (!peerId || !conversations.some((conversation) => conversation.id === peerId)) return;
 
-        const msgTime = formatTime(newMsg.created_at);
         const isCurrentChat = peerId === activeConv.id;
-        const isIncoming = newMsg.receiver_id === myUserId;
+        const isIncoming = newMessage.receiver_id === myUserId;
 
         if (isCurrentChat) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: newMsg.id,
-              from: newMsg.sender_id === myUserId ? "me" : "other",
-              text: newMsg.content || "",
-              time: msgTime,
-            },
-          ]);
+          setMessages((items) => upsertChatMessage(items, toChatMessage(newMessage, myUserId)));
         }
 
-        setConversations((prevConvs) =>
+        setConversations((items) =>
           sortConversations(
-            prevConvs.map((conv) => {
-              if (conv.id !== peerId) return conv;
-              return {
-                ...conv,
-                lastMsg: newMsg.content || "",
-                time: msgTime,
-                lastMessageAt: newMsg.created_at,
-                unreadCount: isIncoming && !isCurrentChat ? conv.unreadCount + 1 : conv.unreadCount,
-              };
-            }),
+            items.map((conversation) =>
+              conversation.id === peerId
+                ? {
+                    ...conversation,
+                    lastMsg: newMessage.content || "",
+                    time: formatTime(newMessage.created_at),
+                    lastMessageAt: newMessage.created_at,
+                    unreadCount:
+                      isIncoming && !isCurrentChat
+                        ? conversation.unreadCount + 1
+                        : conversation.unreadCount,
+                  }
+                : conversation,
+            ),
           ),
         );
 
         if (isCurrentChat && isIncoming) {
-          const { error: updateError } = await supabase
-            .from("messages")
-            .update({ is_read: true })
-            .eq("id", newMsg.id);
-
-          if (updateError) {
-            setError(updateError.message);
-            return;
-          }
-
-          await onMessagesRead?.();
+          await markConversationRead(peerId, myUserId);
         }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (payload) => {
+        const updatedMessage = payload.new as MessageRow;
+
+        if (!isBetweenUsers(updatedMessage, myUserId, activeConv.id)) return;
+
+        setMessages((items) => upsertChatMessage(items, toChatMessage(updatedMessage, myUserId)));
       })
       .subscribe();
 
     return () => {
+      mounted = false;
       supabase.removeChannel(channel);
     };
-  }, [myUserId, activeConv?.id]);
+  }, [myUserId, activeConv?.id, conversations.length]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages]);
+
+  const filteredConversations = useMemo(() => {
+    const normalizedQuery = searchQuery.toLocaleLowerCase("tr-TR").trim();
+    if (!normalizedQuery) return conversations;
+
+    return conversations.filter(
+      (conversation) =>
+        conversation.name.toLocaleLowerCase("tr-TR").includes(normalizedQuery) ||
+        conversation.lastMsg.toLocaleLowerCase("tr-TR").includes(normalizedQuery),
+    );
+  }, [conversations, searchQuery]);
 
   const selectConversation = (conversation: Conversation) => {
     setActiveConv(conversation);
-    localStorage.setItem("active_chat_partner_id", conversation.id);
+    setMobileChatOpen(true);
+    setError(null);
   };
 
   const sendMessage = async () => {
-    if (!message.trim() || !myUserId || !activeConv?.id) return;
     const textToSend = message.trim();
-    setMessage("");
+    if (!textToSend || !myUserId || !activeConv?.id || sending) return;
 
-    const { error: insertError } = await supabase
-      .from("messages")
-      .insert([{ content: textToSend, sender_id: myUserId, receiver_id: activeConv.id, is_read: false }]);
+    setSending(true);
+    setError(null);
 
-    if (insertError) {
-      setError(insertError.message);
+    try {
+      const { data, error: insertError } = await supabase
+        .from("messages")
+        .insert([
+          {
+            content: textToSend,
+            sender_id: myUserId,
+            receiver_id: activeConv.id,
+            is_read: false,
+          },
+        ])
+        .select("id,sender_id,receiver_id,content,created_at,is_read")
+        .single();
+
+      if (insertError) throw insertError;
+
+      const insertedMessage = data as MessageRow;
+      setMessages((items) => upsertChatMessage(items, toChatMessage(insertedMessage, myUserId)));
+      setConversations((items) =>
+        sortConversations(
+          items.map((conversation) =>
+            conversation.id === activeConv.id
+              ? {
+                  ...conversation,
+                  lastMsg: insertedMessage.content || "",
+                  time: formatTime(insertedMessage.created_at),
+                  lastMessageAt: insertedMessage.created_at,
+                }
+              : conversation,
+          ),
+        ),
+      );
+      setMessage("");
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "Mesaj gönderilemedi.");
+    } finally {
+      setSending(false);
     }
   };
 
   return (
-    <div className="flex h-full">
-      <div className="w-72 flex-shrink-0 flex flex-col border-r border-border bg-card">
+    <div className="flex h-full overflow-hidden">
+      <div
+        className={`${
+          mobileChatOpen ? "hidden md:flex" : "flex"
+        } w-full md:w-72 flex-shrink-0 flex-col border-r border-border bg-card`}>
         <div className="p-4 border-b border-border">
           <h2 className="font-extrabold text-foreground mb-3">Mesajlar</h2>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted border border-border">
             <Search size={14} className="text-muted-foreground" />
-            <input placeholder="Konuşmaları ara..." className="flex-1 bg-transparent text-sm outline-none" />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Konuşmaları ara..."
+              className="flex-1 bg-transparent text-sm outline-none min-w-0"
+            />
           </div>
-          {error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2 text-xs text-red-700">{error}</div>}
+          {error && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {loadingConv ? (
-            <div className="p-4 text-center text-xs text-muted-foreground">Kişiler yükleniyor...</div>
+            <div className="p-4 text-center text-xs text-muted-foreground animate-pulse">
+              Konuşmalar yükleniyor...
+            </div>
           ) : conversations.length === 0 ? (
-            <div className="p-4 text-center text-xs text-muted-foreground">Kayıtlı başka kullanıcı bulunamadı.</div>
+            <div className="p-6 text-center">
+              <div className="text-sm font-semibold text-foreground">Henüz eşleşmen yok</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Beceri seçerek eşleştiğin kişiler burada görünecek.
+              </div>
+            </div>
+          ) : filteredConversations.length === 0 ? (
+            <div className="p-6 text-center text-xs text-muted-foreground">
+              Aramana uygun konuşma bulunamadı.
+            </div>
           ) : (
-            conversations.map((conv) => (
-              <button
-                key={conv.id}
-                onClick={() => selectConversation(conv)}
-                className={`w-full flex items-center gap-3 p-4 hover:bg-muted/50 transition-all border-b border-border/50 ${
-                  activeConv?.id === conv.id ? "bg-primary/5 border-l-2 border-l-primary" : ""
-                }`}>
-                <div className="relative flex-shrink-0">
-                  <img src={conv.avatar} alt={conv.name} className="w-11 h-11 rounded-xl object-cover" />
-                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-card" />
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-semibold text-sm text-foreground truncate block">{conv.name}</span>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-xs text-muted-foreground">{conv.time}</span>
-                      {conv.unreadCount > 0 && (
-                        <span className="text-[10px] min-w-[18px] px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground font-bold text-center">
-                          {conv.unreadCount}
-                        </span>
-                      )}
-                    </div>
+            filteredConversations.map((conversation) => {
+              const isOnline = onlinePeerIds.has(conversation.id);
+
+              return (
+                <button
+                  key={conversation.id}
+                  onClick={() => selectConversation(conversation)}
+                  className={`w-full flex items-center gap-3 p-4 hover:bg-muted/50 transition-all border-b border-border/50 ${
+                    activeConv?.id === conversation.id
+                      ? "bg-primary/5 border-l-2 border-l-primary"
+                      : ""
+                  }`}>
+                  <div className="relative flex-shrink-0">
+                    <img
+                      src={conversation.avatar}
+                      alt={conversation.name}
+                      className="w-11 h-11 rounded-xl object-cover"
+                    />
+                    {isOnline && (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-card" />
+                    )}
                   </div>
-                  <span className={`text-xs truncate block mt-0.5 ${conv.unreadCount > 0 ? "text-foreground font-semibold" : "text-muted-foreground"}`}>
-                    {conv.lastMsg}
-                  </span>
-                </div>
-              </button>
-            ))
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-semibold text-sm text-foreground truncate block">
+                        {conversation.name}
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-xs text-muted-foreground">{conversation.time}</span>
+                        {conversation.unreadCount > 0 && (
+                          <span className="text-[10px] min-w-[18px] px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground font-bold text-center">
+                            {conversation.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span
+                      className={`text-xs truncate block mt-0.5 ${
+                        conversation.unreadCount > 0
+                          ? "text-foreground font-semibold"
+                          : "text-muted-foreground"
+                      }`}>
+                      {conversation.lastMsg}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
 
       {activeConv ? (
-        <div className="flex-1 flex flex-col bg-background">
-          <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border bg-card">
-            <img src={activeConv.avatar} alt={activeConv.name} className="w-10 h-10 rounded-xl object-cover" />
+        <div
+          className={`${
+            mobileChatOpen ? "flex" : "hidden md:flex"
+          } flex-1 min-w-0 flex-col bg-background`}>
+          <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5 border-b border-border bg-card">
+            <button
+              type="button"
+              onClick={() => setMobileChatOpen(false)}
+              className="md:hidden p-2 -ml-2 rounded-xl hover:bg-muted"
+              aria-label="Konuşma listesine dön">
+              <ArrowLeft size={18} />
+            </button>
+            <img
+              src={activeConv.avatar}
+              alt={activeConv.name}
+              className="w-10 h-10 rounded-xl object-cover"
+            />
             <div>
               <div className="font-bold text-foreground">{activeConv.name}</div>
-              <div className="text-xs text-muted-foreground">Çevrimiçi</div>
+              <div className="text-xs text-muted-foreground">
+                {onlinePeerIds.has(activeConv.id) ? "Çevrimiçi" : "Çevrimdışı"}
+              </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-            {messages.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Henüz mesaj yok. İlk mesajı sen gönder!</div>
+          {error && mobileChatOpen && (
+            <div className="mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 p-2 text-xs text-red-700 md:hidden">
+              {error}
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-3">
+            {loadingMessages ? (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground animate-pulse">
+                Mesajlar yükleniyor...
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground text-center">
+                Henüz mesaj yok. İlk mesajı sen gönder!
+              </div>
             ) : (
-              messages.map((msg, i) => (
+              messages.map((chatMessage) => (
                 <motion.div
-                  key={msg.id || i}
+                  key={chatMessage.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`flex items-end gap-2 ${msg.from === "me" ? "flex-row-reverse" : "flex-row"}`}>
-                  {msg.from !== "me" && <img src={activeConv.avatar} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />}
-                  <div className={`max-w-sm group relative ${msg.from === "me" ? "items-end" : "items-start"} flex flex-col`}>
+                  className={`flex items-end gap-2 ${
+                    chatMessage.from === "me" ? "flex-row-reverse" : "flex-row"
+                  }`}>
+                  {chatMessage.from !== "me" && (
+                    <img
+                      src={activeConv.avatar}
+                      alt=""
+                      className="w-7 h-7 rounded-full object-cover flex-shrink-0"
+                    />
+                  )}
+                  <div
+                    className={`max-w-[85%] sm:max-w-sm ${
+                      chatMessage.from === "me" ? "items-end" : "items-start"
+                    } flex flex-col`}>
                     <div
-                      className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                        msg.from === "me" ? "text-white rounded-br-sm" : "bg-card border border-border text-foreground rounded-bl-sm"
+                      className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words ${
+                        chatMessage.from === "me"
+                          ? "text-white rounded-br-sm"
+                          : "bg-card border border-border text-foreground rounded-bl-sm"
                       }`}
-                      style={msg.from === "me" ? { background: "var(--sb-gradient)" } : {}}>
-                      {msg.text}
+                      style={chatMessage.from === "me" ? { background: "var(--sb-gradient)" } : {}}>
+                      {chatMessage.text}
                     </div>
-                    <div className={`flex items-center gap-1 mt-1 ${msg.from === "me" ? "flex-row-reverse" : ""}`}>
-                      <span className="text-xs text-muted-foreground">{msg.time}</span>
-                      {msg.from === "me" && <CheckCheck size={12} className="text-primary" />}
+                    <div
+                      className={`flex items-center gap-1 mt-1 ${
+                        chatMessage.from === "me" ? "flex-row-reverse" : ""
+                      }`}>
+                      <span className="text-xs text-muted-foreground">{chatMessage.time}</span>
+                      {chatMessage.from === "me" &&
+                        (chatMessage.isRead ? (
+                          <CheckCheck size={12} className="text-primary" aria-label="Okundu" />
+                        ) : (
+                          <Check size={12} className="text-muted-foreground" aria-label="Gönderildi" />
+                        ))}
                     </div>
                   </div>
                 </motion.div>
               ))
             )}
+            <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-4 border-t border-border bg-card">
+          <div className="p-3 sm:p-4 border-t border-border bg-card">
             <div className="flex items-end gap-2">
               <textarea
                 value={message}
@@ -387,19 +663,28 @@ export function MessagesView({ onMessagesRead }: MessagesViewProps) {
                     sendMessage();
                   }
                 }}
+                disabled={sending}
                 placeholder="Bir mesaj yazın..."
                 rows={1}
-                className="w-full px-4 py-2.5 rounded-2xl border border-border bg-muted text-sm text-foreground outline-none resize-none"
+                className="w-full px-4 py-2.5 rounded-2xl border border-border bg-muted text-sm text-foreground outline-none resize-none disabled:opacity-60"
               />
-              <button onClick={sendMessage} className="p-2.5 rounded-xl text-white transition-all hover:scale-105 flex-shrink-0" style={{ background: "var(--sb-gradient)" }}>
+              <button
+                type="button"
+                onClick={sendMessage}
+                disabled={!message.trim() || sending}
+                className="p-2.5 rounded-xl text-white transition-all hover:scale-105 flex-shrink-0 disabled:opacity-50 disabled:hover:scale-100"
+                style={{ background: "var(--sb-gradient)" }}
+                aria-label="Mesaj gönder">
                 <Send size={16} />
               </button>
             </div>
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-muted-foreground bg-background">
-          Sohbete başlamak için sol menüden birini seçin.
+        <div className="hidden md:flex flex-1 items-center justify-center text-muted-foreground bg-background text-center px-6">
+          {conversations.length > 0
+            ? "Sohbete başlamak için sol menüden birini seçin."
+            : "Bir beceri eşleşmesi oluşturduğunda burada mesajlaşabilirsiniz."}
         </div>
       )}
     </div>

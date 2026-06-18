@@ -1,7 +1,7 @@
-import { apiGet } from "./api";
-import { supabase } from "./supabase";
+import { apiGet, withQuery } from "./api";
 
 export interface HomeDashboardData {
+  generatedAt: string;
   user: {
     id: string;
     firstName: string;
@@ -9,9 +9,12 @@ export interface HomeDashboardData {
     schoolInfo: string;
     avatarUrl: string | null;
     skillPoints: number;
+    coinBalance: number;
     trustScore: number;
+    reviewCount: number;
     streakDays: number;
     nextLevelPoints: number;
+    pointsToNextLevel: number;
   };
   stats: {
     sessions: { value: string; trend: string };
@@ -23,8 +26,17 @@ export interface HomeDashboardData {
     totalHours: number;
     data: { day: string; hours: number }[];
   };
-  activeSkills: { id: string; name: string; progress: number; fill: string }[];
+  activeSkills: {
+    id: string;
+    name: string;
+    kind: string;
+    progress: number;
+    sessionsCompleted: number;
+    hours: number;
+    fill: string;
+  }[];
   nextAchievement: {
+    id: string;
     title: string;
     description: string;
     progressPercent: number;
@@ -32,18 +44,22 @@ export interface HomeDashboardData {
   } | null;
   recentMatches: {
     id: string;
+    otherUserId: string;
     name: string;
     skill: string;
     avatar: string | null;
     rating: number;
+    reviewCount: number;
     distance: string;
     online: boolean;
   }[];
   upcomingSessions: {
     id: string;
     title: string;
-    mentor: string;
-    time: string;
+    peerId: string | null;
+    peerName: string;
+    peerAvatarUrl: string | null;
+    scheduledAt: string;
     color: string;
     emoji: string;
     meetingLink?: string | null;
@@ -60,9 +76,12 @@ export interface HomeDashboardData {
   sidebar: {
     matchCount: number;
     messageCount: number;
-    notificationCount?: number;
+    sessionCount: number;
+    notificationCount: number;
     skillPoints: number;
+    coinBalance: number;
     nextLevelPoints: number;
+    pointsToNextLevel: number;
     skillPointProgress: number;
   };
 }
@@ -72,57 +91,22 @@ export interface HomeSearchResult {
   type: "profile" | "skill";
   title: string;
   subtitle: string;
-}
-
-function formatProfileName(profile: {
-  full_name?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-}) {
-  const explicitName = profile.full_name?.trim();
-  if (explicitName) return explicitName;
-  const composedName = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
-  return composedName || "SkillBridge Kullanıcısı";
-}
-
-function getSchoolInfo(profile: { university?: string | null; department?: string | null }) {
-  const university = profile.university?.trim();
-  const department = profile.department?.trim();
-  if (!university) return "Üniversite Öğrencisi";
-  return department ? `${university} · ${department}` : university;
+  avatarUrl: string | null;
+  matched: boolean;
+  action: "messages" | "findmatch";
 }
 
 export async function getHomeDashboard(): Promise<HomeDashboardData> {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error) throw error;
-  if (!user) throw new Error("Ana sayfa verileri için giriş yapmış kullanıcı bulunamadı.");
-
   const response = await apiGet<{ data: HomeDashboardData }>("/api/dashboard");
-
   return response.data;
 }
 
 export async function searchHomeDirectory(query: string): Promise<HomeSearchResult[]> {
-  const normalizedQuery = query.replace(/[,%()]/g, " ").trim();
+  const normalizedQuery = query.trim();
   if (normalizedQuery.length < 2) return [];
 
-  const pattern = `%${normalizedQuery}%`;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id,full_name,first_name,last_name,university,department,teaches,learns")
-    .or(`full_name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},university.ilike.${pattern},department.ilike.${pattern}`)
-    .limit(8);
-
-  if (error) throw error;
-
-  return (data ?? []).map((profile: any) => ({
-    id: profile.id,
-    type: "profile" as const,
-    title: formatProfileName(profile),
-    subtitle: getSchoolInfo(profile),
-  }));
+  const response = await apiGet<{ data: HomeSearchResult[] }>(
+    withQuery("/api/dashboard/search", { q: normalizedQuery }),
+  );
+  return response.data;
 }
