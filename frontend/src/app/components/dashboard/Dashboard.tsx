@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   BarChart2,
@@ -21,9 +21,14 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
-  listSessions,
   type SkillBridgeSession,
 } from "@/lib/sessions";
+import {
+  getHomeDashboard,
+  searchHomeDirectory,
+  type HomeDashboardData,
+  type HomeSearchResult,
+} from "@/lib/homeDashboard";
 import {
   dismissNotification,
   listNotifications,
@@ -76,12 +81,42 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [notifications, setNotifications] = useState<SkillBridgeNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
-  const [badgeCounts, setBadgeCounts] = useState({
-    matches: 0,
-    messages: 0,
-    sessions: 0,
-    notifications: 0,
-  });
+  const [dashboardData, setDashboardData] = useState<HomeDashboardData | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<HomeSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const dashboardRefreshTimer = useRef<number | null>(null);
+
+  const badgeCounts = {
+    matches: dashboardData?.sidebar.matchCount ?? 0,
+    messages: dashboardData?.sidebar.messageCount ?? 0,
+    sessions: dashboardData?.sidebar.sessionCount ?? 0,
+    notifications: dashboardData?.sidebar.notificationCount ?? 0,
+  };
+
+  const loadDashboard = async () => {
+    setDashboardLoading(true);
+    setDashboardError(null);
+
+    try {
+      const data = await getHomeDashboard();
+      setDashboardData(data);
+      setUserName(data.user.fullName || "Öğrenci");
+      setUserSchoolInfo(data.user.schoolInfo || "Üniversite Öğrencisi");
+    } catch (error) {
+      setDashboardError(
+        error instanceof Error
+          ? error.message
+          : "Dashboard verileri yüklenemedi.",
+      );
+    } finally {
+      setDashboardLoading(false);
+    }
+  };
 
   const loadNotifications = async (userId: string) => {
     setNotificationsLoading(true);
@@ -96,83 +131,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const refreshCounts = async (userId: string) => {
-    const [
-      { data: messageMatches },
-      { count: matchCount },
-      { count: notifCount },
-    ] = await Promise.all([
-        supabase
-          .from("matches")
-          .select("user_id,matched_user_id,status")
-          .or(`user_id.eq.${userId},matched_user_id.eq.${userId}`),
-        supabase
-          .from("connections")
-          .select("*", { count: "exact", head: true })
-          .eq("receiver_id", userId)
-          .eq("status", "pending"),
-        supabase
-          .from("notifications")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .eq("is_read", false)
-          .is("dismissed_at", null),
-      ]);
-
-    const matchedPeerIds = Array.from(
-      new Set(
-        (messageMatches ?? [])
-          .filter(
-            (match) =>
-              !["rejected", "declined", "cancelled"].includes(
-                (match.status || "recommended").toLowerCase(),
-              ),
-          )
-          .map((match) => {
-            return match.user_id === userId
-              ? match.matched_user_id
-              : match.user_id;
-          })
-          .filter((peerId): peerId is string => Boolean(peerId)),
-      ),
-    );
-
-    let msgCount = 0;
-    if (matchedPeerIds.length > 0) {
-      const { count } = await supabase
-        .from("messages")
-        .select("*", { count: "exact", head: true })
-        .eq("receiver_id", userId)
-        .in("sender_id", matchedPeerIds)
-        .or("is_read.eq.false,is_read.is.null");
-      msgCount = count || 0;
-    }
-
-    let pendingSessionCount = 0;
-    try {
-      const sessionResponse = await listSessions({
-        scope: "invitations",
-        role: "invitee",
-        page: 1,
-        limit: 1,
-      });
-      pendingSessionCount = sessionResponse.counts.incomingInvitations;
-    } catch {
-      pendingSessionCount = 0;
-    }
-
-    setBadgeCounts({
-      matches: matchCount || 0,
-      messages: msgCount,
-      sessions: pendingSessionCount,
-      notifications: notifCount || 0,
-    });
-  };
-
   const handleMessagesRead = async () => {
-    if (currentUserId) {
-      await refreshCounts(currentUserId);
-    }
+    if (currentUserId) await loadDashboard();
   };
 
   const openMessages = (peerId: string) => {
@@ -216,23 +176,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       setCurrentUserId(user?.id ?? null);
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name,first_name,last_name,university,department")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      const metadata = user.user_metadata ?? {};
-      const firstName = profile?.first_name || metadata.first_name || "";
-      const lastName = profile?.last_name || metadata.last_name || "";
-      const fullName = profile?.full_name || [firstName, lastName].filter(Boolean).join(" ").trim();
-      const university = profile?.university || metadata.university || "";
-      const department = profile?.department || metadata.department || "";
-
-      if (fullName) setUserName(fullName);
-      if (university) setUserSchoolInfo(`${university}${department ? ` · ${department}` : ""}`);
-
-      await Promise.all([refreshCounts(user.id), loadNotifications(user.id)]);
+      await Promise.all([loadDashboard(), loadNotifications(user.id)]);
     }
 
     initDashboard();
@@ -246,7 +190,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     if (!currentUserId) return;
 
     const refresh = () => {
-      refreshCounts(currentUserId);
+      if (dashboardRefreshTimer.current) {
+        window.clearTimeout(dashboardRefreshTimer.current);
+      }
+      dashboardRefreshTimer.current = window.setTimeout(() => {
+        loadDashboard();
+      }, 250);
+    };
+    const refreshNotifications = () => {
+      refresh();
       loadNotifications(currentUserId);
     };
 
@@ -254,15 +206,59 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       .channel("sidebar_badges")
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_skills" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "learning_activity" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "point_events" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_achievements" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refreshNotifications)
       .subscribe();
 
     return () => {
+      if (dashboardRefreshTimer.current) {
+        window.clearTimeout(dashboardRefreshTimer.current);
+      }
       supabase.removeChannel(channel);
     };
   }, [currentUserId]);
+
+  useEffect(() => {
+    const query = globalSearch.trim();
+    if (!currentUserId || query.length < 2) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setSearchLoading(true);
+      setSearchError(null);
+      searchHomeDirectory(query)
+        .then((results) => {
+          if (active) setSearchResults(results);
+        })
+        .catch((error) => {
+          if (active) {
+            setSearchResults([]);
+            setSearchError(
+              error instanceof Error ? error.message : "Arama yapılamadı.",
+            );
+          }
+        })
+        .finally(() => {
+          if (active) setSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [currentUserId, globalSearch]);
 
   const unreadNotificationCount = notifications.filter((notification) => !notification.is_read).length;
 
@@ -279,20 +275,20 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const handleMarkNotificationRead = async (notificationId: string) => {
     const updated = await markNotificationRead(notificationId);
     setNotifications((items) => items.map((item) => (item.id === notificationId ? updated : item)));
-    if (currentUserId) await refreshCounts(currentUserId);
+    if (currentUserId) await loadDashboard();
   };
 
   const handleMarkAllNotificationsRead = async () => {
     if (!currentUserId) return;
     await markAllNotificationsRead(currentUserId);
     setNotifications((items) => items.map((item) => ({ ...item, is_read: true })));
-    await refreshCounts(currentUserId);
+    await loadDashboard();
   };
 
   const handleDismissNotification = async (notificationId: string) => {
     await dismissNotification(notificationId);
     setNotifications((items) => items.filter((item) => item.id !== notificationId));
-    if (currentUserId) await refreshCounts(currentUserId);
+    if (currentUserId) await loadDashboard();
   };
 
   const handleNotificationActionStatus = async (
@@ -301,7 +297,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   ) => {
     const updated = await updateNotificationActionStatus(notificationId, actionStatus);
     setNotifications((items) => items.map((item) => (item.id === notificationId ? updated : item)));
-    if (currentUserId) await refreshCounts(currentUserId);
+    if (currentUserId) await loadDashboard();
   };
 
   const handleNotificationOpen = async (notification: SkillBridgeNotification) => {
@@ -337,10 +333,34 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const handleSearchResult = (result: HomeSearchResult) => {
+    setGlobalSearch("");
+    setSearchResults([]);
+    setSearchOpen(false);
+
+    if (result.type === "profile" && result.action === "messages") {
+      openMessages(result.id);
+      return;
+    }
+
+    setActiveView("findmatch");
+  };
+
   const renderView = () => {
     switch (activeView) {
       case "home":
-        return <HomeView onNavigate={setActiveView} onOpenSession={openSessions} />;
+        return (
+          <HomeView
+            onNavigate={setActiveView}
+            onOpenSession={openSessions}
+            onOpenMessages={openMessages}
+            onOpenCalendar={openCalendar}
+            dashboardData={dashboardData}
+            loading={dashboardLoading}
+            error={dashboardError}
+            onRefresh={loadDashboard}
+          />
+        );
       case "profile":
         return <ProfileView />;
       case "matches":
@@ -403,7 +423,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           />
         );
       default:
-        return <HomeView onNavigate={setActiveView} onOpenSession={openSessions} />;
+        return (
+          <HomeView
+            onNavigate={setActiveView}
+            onOpenSession={openSessions}
+            onOpenMessages={openMessages}
+            onOpenCalendar={openCalendar}
+            dashboardData={dashboardData}
+            loading={dashboardLoading}
+            error={dashboardError}
+            onRefresh={loadDashboard}
+          />
+        );
     }
   };
 
@@ -515,10 +546,21 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <Zap size={14} style={{ color: "var(--sb-cyan)" }} />
                 <span className="text-xs font-semibold" style={{ color: "var(--sidebar-foreground)" }}>Beceri Puanı</span>
               </div>
-              <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>Canlı</span>
+              <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>
+                {dashboardData?.sidebar.skillPoints.toLocaleString("tr-TR") ?? "0"}
+              </span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.1)" }}>
-              <div className="h-full rounded-full w-2/3" style={{ background: "var(--sb-gradient)" }} />
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${dashboardData?.sidebar.skillPointProgress ?? 0}%`,
+                  background: "var(--sb-gradient)",
+                }}
+              />
+            </div>
+            <div className="mt-1.5 text-[10px] opacity-60" style={{ color: "var(--sidebar-foreground)" }}>
+              Sonraki seviyeye {dashboardData?.sidebar.pointsToNextLevel ?? 0} puan
             </div>
           </div>
         </div>
@@ -531,9 +573,70 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </button>
           <h2 className="font-extrabold text-foreground">{activeItem?.label || "Ana Sayfa"}</h2>
           <div className="flex-1" />
-          <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-muted border border-border w-56">
-            <Search size={15} className="text-muted-foreground flex-shrink-0" />
-            <input placeholder="Beceri, kişi ara..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 min-w-0" />
+          <div className="relative hidden sm:block w-64">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted border border-border">
+              <Search size={15} className="text-muted-foreground flex-shrink-0" />
+              <input
+                value={globalSearch}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
+                onChange={(event) => {
+                  setGlobalSearch(event.target.value);
+                  setSearchOpen(true);
+                }}
+                placeholder="Beceri, kişi ara..."
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 min-w-0"
+              />
+            </div>
+            {searchOpen && globalSearch.trim().length >= 2 && (
+              <div className="absolute right-0 top-full mt-2 w-80 max-h-80 overflow-y-auto rounded-2xl border border-border bg-card shadow-xl z-50 p-2">
+                {searchLoading ? (
+                  <div className="p-4 text-sm text-muted-foreground text-center">
+                    Aranıyor...
+                  </div>
+                ) : searchError ? (
+                  <div className="p-4 text-sm text-red-600">{searchError}</div>
+                ) : searchResults.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground text-center">
+                    Sonuç bulunamadı.
+                  </div>
+                ) : (
+                  searchResults.map((result) => (
+                    <button
+                      key={`${result.type}-${result.id}`}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleSearchResult(result)}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl text-left hover:bg-muted transition-colors">
+                      {result.avatarUrl ? (
+                        <img
+                          src={result.avatarUrl}
+                          alt={result.title}
+                          className="w-9 h-9 rounded-xl object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold"
+                          style={{ background: "var(--sb-gradient)" }}>
+                          {result.title.charAt(0).toLocaleUpperCase("tr-TR")}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-foreground truncate">
+                          {result.title}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {result.subtitle}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-semibold text-primary">
+                        {result.action === "messages" ? "Mesaj" : "Eşleş"}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
           <button onClick={() => setActiveView("notifications")} className="relative p-2.5 rounded-xl hover:bg-muted">
             <Bell size={18} className="text-muted-foreground" />
