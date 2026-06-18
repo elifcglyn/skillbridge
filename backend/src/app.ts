@@ -6,6 +6,7 @@ import healthRoutes from "./routes/health.routes.js";
 import matchesRoutes from "./routes/matches.routes.js";
 import notificationsRoutes from "./routes/notifications.routes.js";
 import profilesRoutes from "./routes/profiles.routes.js";
+import progressRoutes from "./routes/progress.routes.js";
 import sessionsRoutes from "./routes/sessions.routes.js";
 
 const corsOrigin = process.env.CORS_ORIGIN;
@@ -26,6 +27,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/matches", matchesRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/profiles", profilesRoutes);
+app.use("/api/progress", progressRoutes);
 app.use("/api/sessions", sessionsRoutes);
 
 export default app;

@@ -10,6 +10,8 @@ import { getHomeDashboard, type HomeDashboardData } from "@/lib/homeDashboard";
 interface HomeViewProps {
   onNavigate: (view: string) => void;
   onOpenSession?: (sessionId: string) => void;
+  onOpenMessages?: (peerId: string) => void;
+  onOpenCalendar?: (peerId: string) => void;
   dashboardData?: HomeDashboardData | null;
   loading?: boolean;
   error?: string | null;
@@ -38,6 +40,7 @@ function EmptyText({ children }: { children: string }) {
 
 function getFallbackDashboard(): HomeDashboardData {
   return {
+    generatedAt: new Date(0).toISOString(),
     user: {
       id: "",
       firstName: "Öğrenci",
@@ -46,8 +49,10 @@ function getFallbackDashboard(): HomeDashboardData {
       avatarUrl: null,
       skillPoints: 0,
       trustScore: 0,
+      reviewCount: 0,
       streakDays: 0,
       nextLevelPoints: 0,
+      pointsToNextLevel: 0,
     },
     stats: {
       sessions: { value: "0", trend: "Bu hafta +0" },
@@ -75,8 +80,11 @@ function getFallbackDashboard(): HomeDashboardData {
     sidebar: {
       matchCount: 0,
       messageCount: 0,
+      sessionCount: 0,
+      notificationCount: 0,
       skillPoints: 0,
       nextLevelPoints: 0,
+      pointsToNextLevel: 0,
       skillPointProgress: 0,
     },
   };
@@ -85,6 +93,8 @@ function getFallbackDashboard(): HomeDashboardData {
 export function HomeView({
   onNavigate,
   onOpenSession,
+  onOpenMessages,
+  onOpenCalendar,
   dashboardData,
   loading,
   error,
@@ -217,6 +227,9 @@ export function HomeView({
                     initial={{ width: 0 }} animate={{ width: `${skill.progress}%` }}
                     transition={{ duration: 1, ease: "easeOut" }} />
                 </div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {skill.sessionsCompleted} görüşme · {skill.hours}s
+                </div>
               </div>
             ))}
           </div>
@@ -265,14 +278,35 @@ export function HomeView({
                   <div className="text-xs text-muted-foreground truncate">{match.skill}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="flex items-center gap-0.5 text-xs text-muted-foreground"><MapPin size={10} />{match.distance}</span>
-                    <span className="flex items-center gap-0.5 text-xs text-muted-foreground"><Star size={10} fill="#f59e0b" color="#f59e0b" />{match.rating}</span>
+                    <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+                      <Star size={10} fill={match.reviewCount > 0 ? "#f59e0b" : "transparent"} color="#f59e0b" />
+                      {match.reviewCount > 0 ? match.rating.toFixed(1) : "Yeni"}
+                    </span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => onNavigate("messages")} className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                  <button
+                    type="button"
+                    aria-label={`${match.name} kişisine mesaj gönder`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenMessages
+                        ? onOpenMessages(match.otherUserId)
+                        : onNavigate("messages");
+                    }}
+                    className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
                     <MessageSquare size={13} />
                   </button>
-                  <button onClick={() => onNavigate("calendar")} className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors">
+                  <button
+                    type="button"
+                    aria-label={`${match.name} ile görüşme planla`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenCalendar
+                        ? onOpenCalendar(match.otherUserId)
+                        : onNavigate("calendar");
+                    }}
+                    className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors">
                     <Calendar size={13} />
                   </button>
                 </div>
@@ -293,7 +327,15 @@ export function HomeView({
               {data.upcomingSessions.length === 0 ? (
                 <EmptyText>Yaklaşan görüşme bulunmuyor.</EmptyText>
               ) : data.upcomingSessions.map((session) => {
-                const [dateLabel, timeLabel = ""] = session.time.split(",").map(part => part.trim());
+                const formattedDate = new Intl.DateTimeFormat("tr-TR", {
+                  day: "numeric",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }).format(new Date(session.scheduledAt));
+                const [dateLabel, timeLabel = ""] = formattedDate
+                  .split(",")
+                  .map(part => part.trim());
 
                 return (
                   <button
@@ -311,7 +353,7 @@ export function HomeView({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm text-foreground truncate">{session.title}</div>
-                      <div className="text-xs text-muted-foreground">{session.mentor} ile</div>
+                      <div className="text-xs text-muted-foreground">{session.peerName} ile</div>
                     </div>
                     <div className="text-xs text-muted-foreground text-right whitespace-nowrap">{dateLabel}<br />{timeLabel}</div>
                   </button>
@@ -324,7 +366,7 @@ export function HomeView({
           <div className="p-5 rounded-2xl border border-border bg-card">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-foreground">Liderlik Tablosu</h3>
-              <span className="text-xs text-muted-foreground">Bu hafta</span>
+              <span className="text-xs text-muted-foreground">Genel</span>
             </div>
             <div className="space-y-2">
               {data.leaderboard.length === 0 ? (
