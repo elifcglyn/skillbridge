@@ -57,6 +57,22 @@ model MarketPurchase {
   @@schema("public")
 }
 
+model Review {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String?  @map("session_id") @db.Uuid
+  reviewerId String?  @map("reviewer_id") @db.Uuid
+  revieweeId String?  @map("reviewee_id") @db.Uuid
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([sessionId, reviewerId], map: "reviews_session_id_reviewer_id_key")
+  @@index([revieweeId, createdAt(sort: Desc)], map: "reviews_reviewee_created_idx")
+  @@index([reviewerId, createdAt(sort: Desc)], map: "reviews_reviewer_created_idx")
+  @@map("reviews")
+  @@schema("public")
+}
+
 model Connection {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   requesterId String?   @map("requester_id") @db.Uuid

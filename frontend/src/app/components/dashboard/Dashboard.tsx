@@ -11,6 +11,7 @@ import {
   Moon,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   Star,
   Sun,
@@ -41,6 +42,8 @@ import {
   type SkillBridgeNotification,
 } from "@/lib/notifications";
 import { CalendarView } from "./views/CalendarView";
+import { HeaderNotificationsPopover } from "./HeaderNotificationsPopover";
+import { AdminView } from "./views/AdminView";
 import { FeedbackView } from "./views/FeedbackView";
 import { FindMatchView } from "./views/FindMatchView";
 import { HomeView } from "./views/HomeView";
@@ -57,6 +60,8 @@ interface DashboardProps {
   onNavigate: (page: string) => void;
 }
 
+const SHOW_ADMIN_NAV = true;
+
 const NAV_ITEMS = [
   { id: "home", icon: Home, label: "Ana Sayfa" },
   { id: "profile", icon: User, label: "Profilim" },
@@ -69,6 +74,10 @@ const NAV_ITEMS = [
   { id: "notifications", icon: Bell, label: "Bildirimler" },
   { id: "feedback", icon: Star, label: "Geri Bildirim" },
   { id: "progress", icon: BarChart2, label: "Gelişimim" },
+  // TODO: Only show this page for ADMIN or MODERATOR roles.
+  ...(SHOW_ADMIN_NAV
+    ? [{ id: "admin", icon: ShieldCheck, label: "Yönetim Paneli" }]
+    : []),
 ];
 
 export function Dashboard({ onNavigate }: DashboardProps) {
@@ -402,6 +411,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         );
       case "settings":
         return <SettingsView />;
+      case "admin":
+        return <AdminView />;
       case "rewards": // ÖDÜLLER SAYFASI YÖNLENDİRMESİ
         return <RewardsView onBalanceChange={loadDashboard} />;
       case "notifications":
@@ -421,7 +432,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           />
         );
       case "feedback":
-        return <FeedbackView />;
+        return (
+          <FeedbackView
+            initialSessionId={feedbackSessionId}
+            onFeedbackSubmitted={loadDashboard}
+          />
+        );
       case "progress":
         return <SkillProgressView />;
       case "findmatch":
@@ -684,13 +700,36 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             )}
           </div>
-          <button onClick={() => setActiveView("notifications")} className="relative p-2.5 rounded-xl hover:bg-muted">
-            <Bell size={18} className="text-muted-foreground" />
-            {badgeCounts.notifications > 0 && <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />}
-          </button>
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-white border-2 border-primary/30" style={{ background: "var(--sb-gradient)" }}>
+          <HeaderNotificationsPopover
+            notifications={notifications}
+            loading={notificationsLoading}
+            error={notificationsError}
+            unreadCount={unreadNotificationCount}
+            onRefresh={() =>
+              currentUserId ? loadNotifications(currentUserId) : undefined
+            }
+            onMarkRead={handleMarkNotificationRead}
+            onMarkAllRead={handleMarkAllNotificationsRead}
+            onNotificationOpen={handleNotificationOpen}
+            onViewAll={() => setActiveView("notifications")}
+          />
+          <button
+            type="button"
+            aria-label="Profilime git"
+            title="Profilim"
+            onClick={() => {
+              setMessagePeerId(null);
+              setCalendarPeerId(null);
+              setCalendarSession(null);
+              setSessionTargetId(null);
+              setFeedbackSessionId(null);
+              setActiveView("profile");
+            }}
+            className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white border-2 border-primary/30 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-transform"
+            style={{ background: "var(--sb-gradient)" }}
+          >
             {userName.charAt(0)}
-          </div>
+          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto">

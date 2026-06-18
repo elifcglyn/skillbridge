@@ -69,6 +69,7 @@ type SessionRow = {
   peer_first_name: string | null;
   peer_last_name: string | null;
   peer_avatar_url: string | null;
+  has_feedback: boolean;
 };
 
 type MatchParticipantRow = {
@@ -167,7 +168,7 @@ function normalizeSession(row: SessionRow, userId: string) {
       canReschedule: !isTerminal && ["pending", "scheduled"].includes(status) && isMentor,
       canComplete: status === "scheduled" && isMentor && scheduledEnd <= Date.now(),
       canJoin: status === "scheduled" && Boolean(row.meeting_link),
-      canGiveFeedback: status === "completed",
+      canGiveFeedback: status === "completed" && !row.has_feedback,
     },
   };
 }
@@ -416,7 +417,13 @@ async function querySessions(
       profiles.full_name AS peer_full_name,
       profiles.first_name AS peer_first_name,
       profiles.last_name AS peer_last_name,
-      profiles.avatar_url AS peer_avatar_url
+      profiles.avatar_url AS peer_avatar_url,
+      EXISTS (
+        SELECT 1
+        FROM public.reviews
+        WHERE reviews.session_id = sessions.id
+          AND reviews.reviewer_id::text = ${userId}
+      ) AS has_feedback
     FROM public.sessions
     LEFT JOIN public.profiles
       ON profiles.id = CASE
