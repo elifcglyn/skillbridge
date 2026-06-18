@@ -16,9 +16,14 @@ import {
   Sun,
   User,
   Users,
+  Video,
   Zap,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import {
+  listSessions,
+  type SkillBridgeSession,
+} from "@/lib/sessions";
 import {
   dismissNotification,
   listNotifications,
@@ -37,6 +42,7 @@ import { MessagesView } from "./views/MessagesView";
 import { NotificationsView } from "./views/NotificationsView";
 import { ProfileView } from "./views/ProfileView";
 import { SkillProgressView } from "./views/SkillProgressView";
+import { SessionsView } from "./views/SessionsView";
 
 interface DashboardProps {
   onNavigate: (page: string) => void;
@@ -49,6 +55,7 @@ const NAV_ITEMS = [
   { id: "matches", icon: Users, label: "Eşleşmeler" },
   { id: "messages", icon: MessageSquare, label: "Mesajlar" },
   { id: "calendar", icon: Calendar, label: "Takvim" },
+  { id: "sessions", icon: Video, label: "Görüşmeler" },
   { id: "notifications", icon: Bell, label: "Bildirimler" },
   { id: "feedback", icon: Star, label: "Geri Bildirim" },
   { id: "progress", icon: BarChart2, label: "Gelişimim" },
@@ -63,12 +70,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [userSchoolInfo, setUserSchoolInfo] = useState("Üniversite Öğrencisi");
   const [messagePeerId, setMessagePeerId] = useState<string | null>(null);
   const [calendarPeerId, setCalendarPeerId] = useState<string | null>(null);
+  const [calendarSession, setCalendarSession] = useState<SkillBridgeSession | null>(null);
+  const [sessionTargetId, setSessionTargetId] = useState<string | null>(null);
+  const [feedbackSessionId, setFeedbackSessionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<SkillBridgeNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [badgeCounts, setBadgeCounts] = useState({
     matches: 0,
     messages: 0,
+    sessions: 0,
     notifications: 0,
   });
 
@@ -137,9 +148,23 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       msgCount = count || 0;
     }
 
+    let pendingSessionCount = 0;
+    try {
+      const sessionResponse = await listSessions({
+        scope: "invitations",
+        role: "invitee",
+        page: 1,
+        limit: 1,
+      });
+      pendingSessionCount = sessionResponse.counts.incomingInvitations;
+    } catch {
+      pendingSessionCount = 0;
+    }
+
     setBadgeCounts({
       matches: matchCount || 0,
       messages: msgCount,
+      sessions: pendingSessionCount,
       notifications: notifCount || 0,
     });
   };
@@ -152,6 +177,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const openMessages = (peerId: string) => {
     setCalendarPeerId(null);
+    setCalendarSession(null);
     setMessagePeerId(peerId);
     setActiveView("messages");
   };
@@ -159,7 +185,25 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const openCalendar = (peerId: string) => {
     setMessagePeerId(null);
     setCalendarPeerId(peerId);
+    setCalendarSession(null);
     setActiveView("calendar");
+  };
+
+  const openCalendarSession = (session?: SkillBridgeSession | null) => {
+    setMessagePeerId(null);
+    setCalendarPeerId(session?.peer.id ?? null);
+    setCalendarSession(session ?? null);
+    setActiveView("calendar");
+  };
+
+  const openSessions = (sessionId?: string | null) => {
+    setSessionTargetId(sessionId ?? null);
+    setActiveView("sessions");
+  };
+
+  const openFeedback = (session: SkillBridgeSession) => {
+    setFeedbackSessionId(session.id);
+    setActiveView("feedback");
   };
 
   useEffect(() => {
@@ -211,6 +255,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refresh)
       .subscribe();
 
@@ -274,11 +319,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       return;
     }
     if (notification.type === "SESSION") {
-      if (peerId) {
-        openCalendar(peerId);
-      } else {
-        setActiveView("calendar");
-      }
+      const sessionId =
+        typeof notification.metadata.sessionId === "string"
+          ? notification.metadata.sessionId
+          : null;
+      openSessions(sessionId);
       return;
     }
     if (notification.type === "MATCH") {
@@ -295,7 +340,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const renderView = () => {
     switch (activeView) {
       case "home":
-        return <HomeView onNavigate={setActiveView} />;
+        return <HomeView onNavigate={setActiveView} onOpenSession={openSessions} />;
       case "profile":
         return <ProfileView />;
       case "matches":
@@ -314,7 +359,21 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           />
         );
       case "calendar":
-        return <CalendarView initialPeerId={calendarPeerId} />;
+        return (
+          <CalendarView
+            initialPeerId={calendarPeerId}
+            initialSession={calendarSession}
+            onOpenSession={openSessions}
+          />
+        );
+      case "sessions":
+        return (
+          <SessionsView
+            initialSessionId={sessionTargetId}
+            onOpenCalendar={openCalendarSession}
+            onOpenFeedback={openFeedback}
+          />
+        );
       case "notifications":
         return (
           <NotificationsView
@@ -332,7 +391,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           />
         );
       case "feedback":
-        return <FeedbackView />;
+        return <FeedbackView initialSessionId={feedbackSessionId} />;
       case "progress":
         return <SkillProgressView />;
       case "findmatch":
@@ -344,7 +403,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           />
         );
       default:
-        return <HomeView onNavigate={setActiveView} />;
+        return <HomeView onNavigate={setActiveView} onOpenSession={openSessions} />;
     }
   };
 
@@ -394,6 +453,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               let currentBadge = 0;
               if (item.id === "matches") currentBadge = badgeCounts.matches;
               if (item.id === "messages") currentBadge = badgeCounts.messages;
+              if (item.id === "sessions") currentBadge = badgeCounts.sessions;
               if (item.id === "notifications") currentBadge = badgeCounts.notifications;
 
               return (
@@ -402,6 +462,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   onClick={() => {
                     setMessagePeerId(null);
                     setCalendarPeerId(null);
+                    setCalendarSession(null);
+                    setSessionTargetId(null);
+                    setFeedbackSessionId(null);
                     setActiveView(item.id);
                     setSidebarOpen(false);
                   }}

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import {
   createSession,
+  getSession,
   listSessions,
   SessionActionError,
   updateSession,
@@ -16,6 +17,15 @@ const ACTIONS = new Set<SessionAction>([
   "reschedule",
   "complete",
 ]);
+const STATUSES = new Set([
+  "pending",
+  "scheduled",
+  "declined",
+  "cancelled",
+  "completed",
+]);
+const SCOPES = new Set(["invitations", "upcoming", "history"]);
+const ROLES = new Set(["creator", "invitee"]);
 
 function parseDateQuery(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return undefined;
@@ -30,7 +40,11 @@ function actionErrorResponse(error: SessionActionError, response: Response) {
   if (error.code === "FORBIDDEN") {
     return response.status(403).json({ message: error.message });
   }
-  if (error.code === "TERMINAL_STATUS") {
+  if (
+    error.code === "TERMINAL_STATUS" ||
+    error.code === "SESSION_CONFLICT" ||
+    error.code === "CONCURRENT_UPDATE"
+  ) {
     return response.status(409).json({ message: error.message });
   }
   return response.status(400).json({ message: error.message });
@@ -44,19 +58,61 @@ export async function listSessionsController(request: Request, response: Respons
     if (from === null || to === null) {
       return response.status(400).json({ message: "from ve to geçerli tarih olmalıdır." });
     }
+    if (from && to && new Date(from).getTime() >= new Date(to).getTime()) {
+      return response.status(400).json({ message: "from tarihi to tarihinden önce olmalıdır." });
+    }
 
     const statuses =
       typeof request.query.status === "string"
         ? request.query.status.split(",").map((status) => status.trim()).filter(Boolean)
         : undefined;
+    const scope =
+      typeof request.query.scope === "string"
+        ? request.query.scope.trim().toLowerCase()
+        : undefined;
+    const role =
+      typeof request.query.role === "string"
+        ? request.query.role.trim().toLowerCase()
+        : undefined;
+    const query =
+      typeof request.query.q === "string" ? request.query.q.trim() : undefined;
+    const page = Number(request.query.page ?? 1);
+    const limit = Number(request.query.limit ?? 20);
 
-    const sessions = await listSessions({
+    if (statuses?.some((status) => !STATUSES.has(status.toLowerCase()))) {
+      return response.status(400).json({ message: "Geçersiz görüşme durumu." });
+    }
+    if (scope && !SCOPES.has(scope)) {
+      return response.status(400).json({ message: "Geçersiz görüşme kapsamı." });
+    }
+    if (role && !ROLES.has(role)) {
+      return response.status(400).json({ message: "Geçersiz görüşme rolü." });
+    }
+    if (query && query.length > 100) {
+      return response.status(400).json({ message: "Arama metni en fazla 100 karakter olabilir." });
+    }
+    if (
+      !Number.isInteger(page) ||
+      page < 1 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 50
+    ) {
+      return response.status(400).json({ message: "page ve limit değerleri geçersiz." });
+    }
+
+    const result = await listSessions({
       userId: request.auth.userId,
       from,
       to,
       statuses,
+      scope: scope as "invitations" | "upcoming" | "history" | undefined,
+      query,
+      role: role as "creator" | "invitee" | undefined,
+      page,
+      limit,
     });
-    return response.json({ data: sessions, count: sessions.length });
+    return response.json(result);
   } catch (error) {
     console.error("Sessions list endpoint error:", error);
     return response.status(500).json({ message: "Görüşmeler alınırken bir hata oluştu." });
@@ -93,6 +149,24 @@ export async function createSessionController(request: Request, response: Respon
     }
     console.error("Session create endpoint error:", error);
     return response.status(500).json({ message: "Görüşme oluşturulurken bir hata oluştu." });
+  }
+}
+
+export async function getSessionController(request: Request, response: Response) {
+  try {
+    const sessionId = String(request.params.id ?? "").trim();
+    if (!UUID_PATTERN.test(sessionId)) {
+      return response.status(400).json({ message: "Geçerli görüşme kimliği gereklidir." });
+    }
+
+    const session = await getSession(request.auth.userId, sessionId);
+    return response.json({ data: session });
+  } catch (error) {
+    if (error instanceof SessionActionError) {
+      return actionErrorResponse(error, response);
+    }
+    console.error("Session detail endpoint error:", error);
+    return response.status(500).json({ message: "Görüşme alınırken bir hata oluştu." });
   }
 }
 

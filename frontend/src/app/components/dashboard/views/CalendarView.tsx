@@ -1,53 +1,26 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import {
+  ArrowRight,
   CalendarCheck,
   CalendarPlus,
-  Check,
   ChevronLeft,
   ChevronRight,
   Clock,
-  Link,
   Plus,
   RotateCcw,
   User,
   Video,
-  X,
 } from "lucide-react";
-import { apiGet, apiSend, withQuery } from "@/lib/api";
+import { apiGet } from "@/lib/api";
+import {
+  createSession,
+  getSessionStatusConfig,
+  listCalendarSessions,
+  updateSession,
+  type SkillBridgeSession,
+} from "@/lib/sessions";
 import { supabase } from "@/lib/supabase";
-
-type SessionStatus = "pending" | "scheduled" | "declined" | "cancelled" | "completed";
-type SessionAction = "accept" | "decline" | "cancel" | "reschedule" | "complete";
-
-type Session = {
-  id: string;
-  matchId: string | null;
-  mentorId: string | null;
-  learnerId: string | null;
-  studentId: string | null;
-  title: string;
-  skillName: string;
-  scheduledAt: string;
-  durationMinutes: number;
-  deliveryType: string;
-  status: SessionStatus;
-  meetingLink: string | null;
-  color: string;
-  emoji: string;
-  peer: {
-    id: string | null;
-    name: string;
-    avatarUrl: string | null;
-  };
-  permissions: {
-    canAccept: boolean;
-    canDecline: boolean;
-    canCancel: boolean;
-    canReschedule: boolean;
-    canComplete: boolean;
-  };
-};
 
 type SelectedMatch = {
   matchId: string;
@@ -61,37 +34,12 @@ type SelectedMatch = {
 
 type CalendarViewProps = {
   initialPeerId?: string | null;
+  initialSession?: SkillBridgeSession | null;
+  onOpenSession?: (sessionId: string) => void;
 };
 
 const WEEKDAYS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 const DURATIONS = [30, 45, 60, 90];
-const STATUS_CONFIG: Record<SessionStatus, { label: string; color: string; className: string }> = {
-  pending: {
-    label: "Onay bekliyor",
-    color: "#f59e0b",
-    className: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  },
-  scheduled: {
-    label: "Planlandı",
-    color: "#10b981",
-    className: "bg-green-500/10 text-green-700 dark:text-green-300",
-  },
-  declined: {
-    label: "Reddedildi",
-    color: "#ef4444",
-    className: "bg-red-500/10 text-red-600",
-  },
-  cancelled: {
-    label: "İptal edildi",
-    color: "#64748b",
-    className: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
-  },
-  completed: {
-    label: "Tamamlandı",
-    color: "#6366f1",
-    className: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
-  },
-};
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -127,17 +75,24 @@ function monthRange(month: Date) {
   return { from, to };
 }
 
-function statusConfig(status: string) {
-  return STATUS_CONFIG[(status as SessionStatus) || "pending"] ?? STATUS_CONFIG.pending;
-}
-
-export function CalendarView({ initialPeerId }: CalendarViewProps) {
+export function CalendarView({
+  initialPeerId,
+  initialSession,
+  onOpenSession,
+}: CalendarViewProps) {
   const today = new Date();
   const [viewMonth, setViewMonth] = useState(
-    () => new Date(today.getFullYear(), today.getMonth(), 1),
+    () => {
+      const initialDate = initialSession
+        ? new Date(initialSession.scheduledAt)
+        : today;
+      return new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
+    },
   );
-  const [selectedDate, setSelectedDate] = useState(today);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedDate, setSelectedDate] = useState(
+    () => initialSession ? new Date(initialSession.scheduledAt) : today,
+  );
+  const [sessions, setSessions] = useState<SkillBridgeSession[]>([]);
   const [matches, setMatches] = useState<SelectedMatch[]>([]);
   const [title, setTitle] = useState("SkillBridge Görüşmesi");
   const [peerId, setPeerId] = useState("");
@@ -147,8 +102,8 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [workingSessionId, setWorkingSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const appliedInitialSessionId = useRef<string | null>(null);
 
   const loadCalendar = async () => {
     setLoading(true);
@@ -156,21 +111,22 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
 
     try {
       const { from, to } = monthRange(viewMonth);
-      const [{ data: sessionRows }, { data: selectedMatches }] = await Promise.all([
-        apiGet<{ data: Session[] }>(
-          withQuery("/api/sessions", {
-            from: from.toISOString(),
-            to: to.toISOString(),
-          }),
-        ),
+      const [sessionRows, { data: selectedMatches }] = await Promise.all([
+        listCalendarSessions(from.toISOString(), to.toISOString()),
         apiGet<{ data: SelectedMatch[] }>("/api/matches/selected"),
       ]);
 
       const nextMatches = selectedMatches ?? [];
-      setSessions(sessionRows ?? []);
+      const shouldApplyInitialSession =
+        Boolean(initialSession) &&
+        appliedInitialSessionId.current !== initialSession?.id;
+      setSessions(sessionRows);
       setMatches(nextMatches);
 
       const preferredPeer =
+        (shouldApplyInitialSession &&
+          initialSession?.peer.id &&
+          nextMatches.find((match) => match.otherUserId === initialSession.peer.id)) ||
         (initialPeerId && nextMatches.find((match) => match.otherUserId === initialPeerId)) ||
         nextMatches.find((match) => match.otherUserId === peerId) ||
         nextMatches[0];
@@ -184,6 +140,15 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
       } else {
         setPeerId("");
         setSkillName("");
+      }
+
+      if (shouldApplyInitialSession && initialSession?.permissions.canReschedule) {
+        appliedInitialSessionId.current = initialSession.id;
+        setEditingSessionId(initialSession.id);
+        setTitle(initialSession.title);
+        setSkillName(initialSession.skillName);
+        setScheduledAt(toDateTimeLocal(new Date(initialSession.scheduledAt)));
+        setDurationMinutes(initialSession.durationMinutes);
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Takvim yüklenemedi.");
@@ -207,7 +172,12 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [viewMonth.getFullYear(), viewMonth.getMonth(), initialPeerId]);
+  }, [
+    viewMonth.getFullYear(),
+    viewMonth.getMonth(),
+    initialPeerId,
+    initialSession?.id,
+  ]);
 
   const selectedMatch = matches.find((match) => match.otherUserId === peerId) ?? null;
   const { from: monthStart } = monthRange(viewMonth);
@@ -287,28 +257,27 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
 
     try {
       if (editingSessionId) {
-        const response = await apiSend<{ data: Session }>(
-          `/api/sessions/${editingSessionId}`,
-          "PATCH",
+        const updatedSession = await updateSession(
+          editingSessionId,
+          "reschedule",
           {
-            action: "reschedule",
             scheduledAt: new Date(scheduledAt).toISOString(),
             durationMinutes,
           },
         );
         setSessions((items) =>
           items.map((session) =>
-            session.id === editingSessionId ? response.data : session,
+            session.id === editingSessionId ? updatedSession : session,
           ),
         );
-        const updatedDate = new Date(response.data.scheduledAt);
+        const updatedDate = new Date(updatedSession.scheduledAt);
         setViewMonth(
           new Date(updatedDate.getFullYear(), updatedDate.getMonth(), 1),
         );
         setSelectedDate(updatedDate);
         resetForm(updatedDate);
       } else {
-        const response = await apiSend<{ data: Session }>("/api/sessions", "POST", {
+        const createdSession = await createSession({
           matchId: selectedMatch.matchId,
           learnerId: selectedMatch.otherUserId,
           title: title.trim() || `${selectedMatch.skillName} Görüşmesi`,
@@ -317,11 +286,11 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
           durationMinutes,
         });
 
-        const createdDate = new Date(response.data.scheduledAt);
+        const createdDate = new Date(createdSession.scheduledAt);
         setViewMonth(new Date(createdDate.getFullYear(), createdDate.getMonth(), 1));
         setSelectedDate(createdDate);
         setSessions((items) =>
-          [...items.filter((session) => session.id !== response.data.id), response.data].sort(
+          [...items.filter((session) => session.id !== createdSession.id), createdSession].sort(
             (left, right) =>
               new Date(left.scheduledAt).getTime() -
               new Date(right.scheduledAt).getTime(),
@@ -337,31 +306,7 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
     }
   };
 
-  const runSessionAction = async (session: Session, action: SessionAction) => {
-    setWorkingSessionId(session.id);
-    setError(null);
-
-    try {
-      const response = await apiSend<{ data: Session }>(
-        `/api/sessions/${session.id}`,
-        "PATCH",
-        { action },
-      );
-      setSessions((items) =>
-        items.map((item) => (item.id === session.id ? response.data : item)),
-      );
-    } catch (actionError) {
-      setError(
-        actionError instanceof Error
-          ? actionError.message
-          : "Görüşme güncellenemedi.",
-      );
-    } finally {
-      setWorkingSessionId(null);
-    }
-  };
-
-  const beginReschedule = (session: Session) => {
+  const beginReschedule = (session: SkillBridgeSession) => {
     setEditingSessionId(session.id);
     setPeerId(session.peer.id || "");
     setSkillName(session.skillName);
@@ -480,7 +425,7 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
                           style={{
                             background: isSelected
                               ? "rgba(255,255,255,0.85)"
-                              : statusConfig(session.status).color,
+                              : getSessionStatusConfig(session.status).color,
                           }}
                         />
                       ))}
@@ -522,8 +467,7 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
           ) : (
             <div className="space-y-3 max-h-[34rem] overflow-y-auto pr-1">
               {selectedSessions.map((session) => {
-                const config = statusConfig(session.status);
-                const isWorking = workingSessionId === session.id;
+                const config = getSessionStatusConfig(session.status);
 
                 return (
                   <motion.div
@@ -562,60 +506,21 @@ export function CalendarView({ initialPeerId }: CalendarViewProps) {
                       </span>
                     </div>
 
-                    {session.status === "scheduled" && session.meetingLink && (
-                      <a
-                        href={session.meetingLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-3 inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline">
-                        <Link size={11} /> Jitsi görüşmesine katıl
-                      </a>
-                    )}
-
                     <div className="flex flex-wrap gap-2 mt-3">
-                      {session.permissions.canAccept && (
-                        <button
-                          type="button"
-                          disabled={isWorking}
-                          onClick={() => runSessionAction(session, "accept")}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500/10 text-green-700 text-xs font-semibold disabled:opacity-40">
-                          <Check size={12} /> Kabul et
-                        </button>
-                      )}
-                      {session.permissions.canDecline && (
-                        <button
-                          type="button"
-                          disabled={isWorking}
-                          onClick={() => runSessionAction(session, "decline")}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-600 text-xs font-semibold disabled:opacity-40">
-                          <X size={12} /> Reddet
-                        </button>
-                      )}
                       {session.permissions.canReschedule && (
                         <button
                           type="button"
-                          disabled={isWorking}
                           onClick={() => beginReschedule(session)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-semibold disabled:opacity-40">
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-semibold">
                           <RotateCcw size={12} /> Yeniden planla
                         </button>
                       )}
-                      {session.permissions.canComplete && (
+                      {onOpenSession && (
                         <button
                           type="button"
-                          disabled={isWorking}
-                          onClick={() => runSessionAction(session, "complete")}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-700 text-xs font-semibold disabled:opacity-40">
-                          <CalendarCheck size={12} /> Tamamlandı
-                        </button>
-                      )}
-                      {session.permissions.canCancel && (
-                        <button
-                          type="button"
-                          disabled={isWorking}
-                          onClick={() => runSessionAction(session, "cancel")}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground text-xs font-semibold disabled:opacity-40">
-                          İptal et
+                          onClick={() => onOpenSession(session.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground text-xs font-semibold hover:bg-muted">
+                          Yönet <ArrowRight size={12} />
                         </button>
                       )}
                     </div>

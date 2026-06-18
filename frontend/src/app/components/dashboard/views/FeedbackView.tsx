@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Star, ThumbsUp, Shield, MessageSquare } from "lucide-react";
+import { getSession, type SkillBridgeSession } from "@/lib/sessions";
 
 const REVIEWS = [
   { id: 1, from: "Aria Chen", role: "Mentor", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=60&h=60&fit=crop", rating: 5, comment: "Alex is one of the most dedicated students I've taught. He comes prepared, asks great questions, and implements feedback immediately. Highly recommend!", date: "June 2, 2026", skill: "Python" },
@@ -8,7 +10,33 @@ const REVIEWS = [
   { id: 4, from: "Sofia M.", role: "Learner", avatar: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=60&h=60&fit=crop", rating: 4, comment: "Great Python sessions with Alex. Very knowledgeable and helpful. Looking forward to more sessions!", date: "May 12, 2026", skill: "Python" },
 ];
 
-export function FeedbackView() {
+type FeedbackViewProps = {
+  initialSessionId?: string | null;
+};
+
+export function FeedbackView({ initialSessionId }: FeedbackViewProps) {
+  const [selectedSession, setSelectedSession] = useState<SkillBridgeSession | null>(null);
+
+  useEffect(() => {
+    if (!initialSessionId) {
+      setSelectedSession(null);
+      return;
+    }
+
+    let active = true;
+    getSession(initialSessionId)
+      .then((session) => {
+        if (active) setSelectedSession(session);
+      })
+      .catch(() => {
+        if (active) setSelectedSession(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [initialSessionId]);
+
   const avgRating = (REVIEWS.reduce((sum, r) => sum + r.rating, 0) / REVIEWS.length).toFixed(1);
 
   return (
@@ -118,6 +146,22 @@ export function FeedbackView() {
         </div>
         <p className="text-sm text-muted-foreground mb-3">You have 2 sessions awaiting your feedback. Help build the community's trust!</p>
         <div className="space-y-2">
+          {selectedSession && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-card border border-primary/30">
+              <div className="flex-1">
+                <span className="font-medium text-sm text-foreground">
+                  {selectedSession.peer.name}
+                </span>
+                <span className="text-xs text-muted-foreground ml-2">
+                  · {selectedSession.title} ·{" "}
+                  {new Date(selectedSession.scheduledAt).toLocaleDateString("tr-TR")}
+                </span>
+              </div>
+              <button className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: "var(--sb-gradient)" }}>
+                Rate Now
+              </button>
+            </div>
+          )}
           {[
             { name: "Aria Chen", skill: "Python Session", date: "June 4" },
             { name: "Priya Sharma", skill: "React Tutorial", date: "June 3" },
