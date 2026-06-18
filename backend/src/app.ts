@@ -15,7 +15,10 @@ export const app = express();
 
 app.use(
   cors({
-    origin: corsOrigin ? corsOrigin.split(",").map((origin) => origin.trim()) : true,
+    origin: corsOrigin 
+      ? corsOrigin.split(",").map((origin) => origin.trim()) 
+      : ["http://localhost:5173", "http://127.0.0.1:5173"],
+    credentials: true, // Kimlik doğrulama (cookie/token) geçişine izin veren kritik ayar
   }),
 );
 

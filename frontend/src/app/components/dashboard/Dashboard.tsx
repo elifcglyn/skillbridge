@@ -18,6 +18,8 @@ import {
   Users,
   Video,
   Zap,
+  Gift, // EKLENDİ
+  Coins // EKLENDİ
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -48,6 +50,8 @@ import { NotificationsView } from "./views/NotificationsView";
 import { ProfileView } from "./views/ProfileView";
 import { SkillProgressView } from "./views/SkillProgressView";
 import { SessionsView } from "./views/SessionsView";
+import { SettingsView } from "./views/SettingsView";
+import { RewardsView } from "./views/RewardsView"; // EKLENDİ
 
 interface DashboardProps {
   onNavigate: (page: string) => void;
@@ -61,6 +65,7 @@ const NAV_ITEMS = [
   { id: "messages", icon: MessageSquare, label: "Mesajlar" },
   { id: "calendar", icon: Calendar, label: "Takvim" },
   { id: "sessions", icon: Video, label: "Görüşmeler" },
+  { id: "rewards", icon: Gift, label: "Ödül & Market" }, // MENÜYE EKLENDİ
   { id: "notifications", icon: Bell, label: "Bildirimler" },
   { id: "feedback", icon: Star, label: "Geri Bildirim" },
   { id: "progress", icon: BarChart2, label: "Gelişimim" },
@@ -346,6 +351,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     setActiveView("findmatch");
   };
 
+  // SAYFA RENDER SİSTEMİ
   const renderView = () => {
     switch (activeView) {
       case "home":
@@ -394,6 +400,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             onOpenFeedback={openFeedback}
           />
         );
+      case "settings":
+        return <SettingsView />;
+      case "rewards": // ÖDÜLLER SAYFASI YÖNLENDİRMESİ
+        return <RewardsView />;
       case "notifications":
         return (
           <NotificationsView
@@ -411,7 +421,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           />
         );
       case "feedback":
-        return <FeedbackView initialSessionId={feedbackSessionId} />;
+        return <FeedbackView />;
       case "progress":
         return <SkillProgressView />;
       case "findmatch":
@@ -528,10 +538,30 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 {darkMode ? "Açık Tema" : "Koyu Tema"}
               </span>
             </button>
-            <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:opacity-80">
-              <Settings size={18} />
-              <span className="text-sm font-medium" style={{ color: "var(--sidebar-foreground)" }}>Ayarlar</span>
+            
+            <button 
+              onClick={() => {
+                setMessagePeerId(null);
+                setCalendarPeerId(null);
+                setCalendarSession(null);
+                setSessionTargetId(null);
+                setFeedbackSessionId(null);
+                setActiveView("settings");
+                setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                activeView === "settings" ? "shadow-md" : "hover:opacity-80"
+              }`}
+              style={activeView === "settings"
+                ? { background: "var(--sb-gradient)" }
+                : { color: "var(--sidebar-accent-foreground)" }}
+            >
+              <Settings size={18} style={{ color: activeView === "settings" ? "white" : "var(--sidebar-primary)" }} />
+              <span className="text-sm font-medium text-left" style={{ color: activeView === "settings" ? "white" : "var(--sidebar-foreground)" }}>
+                Ayarlar
+              </span>
             </button>
+            
             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:opacity-80">
               <LogOut size={18} className="text-red-400" />
               <span className="text-sm font-medium text-red-400">Çıkış Yap</span>
@@ -539,12 +569,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </div>
         </nav>
 
+        {/* SKILLCOIN GÖSTERGESİ (GÜNCELLENDİ) */}
         <div className="px-4 py-4">
           <div className="p-3 rounded-2xl border" style={{ background: "rgba(129,140,248,0.1)", borderColor: "var(--sidebar-border)" }}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
-                <Zap size={14} style={{ color: "var(--sb-cyan)" }} />
-                <span className="text-xs font-semibold" style={{ color: "var(--sidebar-foreground)" }}>Beceri Puanı</span>
+                <Coins size={14} style={{ color: "var(--sb-cyan)" }} />
+                <span className="text-xs font-semibold" style={{ color: "var(--sidebar-foreground)" }}>SkillCoin</span>
               </div>
               <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>
                 {dashboardData?.sidebar.skillPoints.toLocaleString("tr-TR") ?? "0"}
@@ -560,7 +591,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               />
             </div>
             <div className="mt-1.5 text-[10px] opacity-60" style={{ color: "var(--sidebar-foreground)" }}>
-              Sonraki seviyeye {dashboardData?.sidebar.pointsToNextLevel ?? 0} puan
+              Sonraki hedefe {dashboardData?.sidebar.pointsToNextLevel ?? 0} coin
             </div>
           </div>
         </div>
@@ -571,7 +602,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <button className="lg:hidden p-2 rounded-xl hover:bg-muted" onClick={() => setSidebarOpen(true)}>
             <Menu size={20} />
           </button>
-          <h2 className="font-extrabold text-foreground">{activeItem?.label || "Ana Sayfa"}</h2>
+          <h2 className="font-extrabold text-foreground">
+            {activeView === "settings" ? "Ayarlar" : activeView === "rewards" ? "Ödül & Market" : activeItem?.label || "Ana Sayfa"}
+          </h2>
           <div className="flex-1" />
           <div className="relative hidden sm:block w-64">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted border border-border">

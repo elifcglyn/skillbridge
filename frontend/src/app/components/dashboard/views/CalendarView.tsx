@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowRight,
   CalendarCheck,
@@ -11,6 +11,9 @@ import {
   RotateCcw,
   User,
   Video,
+  MapPin,
+  ShieldAlert,
+  Sparkles
 } from "lucide-react";
 import { apiGet } from "@/lib/api";
 import {
@@ -99,6 +102,10 @@ export function CalendarView({
   const [skillName, setSkillName] = useState("");
   const [scheduledAt, setScheduledAt] = useState(() => defaultScheduledAt(today));
   const [durationMinutes, setDurationMinutes] = useState(60);
+  
+  // EKLENEN ÖZELLİK: Görüşme Tipi State'i
+  const [deliveryType, setDeliveryType] = useState<"video" | "in_person">("video");
+
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -149,6 +156,8 @@ export function CalendarView({
         setSkillName(initialSession.skillName);
         setScheduledAt(toDateTimeLocal(new Date(initialSession.scheduledAt)));
         setDurationMinutes(initialSession.durationMinutes);
+        // EKLENDİ: Başlangıç oturumu tipi
+        setDeliveryType((initialSession as any).deliveryType || "video");
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Takvim yüklenemedi.");
@@ -243,6 +252,7 @@ export function CalendarView({
     setEditingSessionId(null);
     setScheduledAt(defaultScheduledAt(baseDate));
     setDurationMinutes(60);
+    setDeliveryType("video"); // EKLENDİ
     if (selectedMatch) {
       setTitle(`${selectedMatch.skillName} Görüşmesi`);
       setSkillName(selectedMatch.skillName);
@@ -263,7 +273,8 @@ export function CalendarView({
           {
             scheduledAt: new Date(scheduledAt).toISOString(),
             durationMinutes,
-          },
+            deliveryType, // EKLENDİ: Backend için
+          } as any, // Güvenlik için any eklendi
         );
         setSessions((items) =>
           items.map((session) =>
@@ -284,7 +295,8 @@ export function CalendarView({
           skillName: skillName || selectedMatch.skillName,
           scheduledAt: new Date(scheduledAt).toISOString(),
           durationMinutes,
-        });
+          deliveryType, // EKLENDİ: Backend için
+        } as any); // Güvenlik için any eklendi
 
         const createdDate = new Date(createdSession.scheduledAt);
         setViewMonth(new Date(createdDate.getFullYear(), createdDate.getMonth(), 1));
@@ -313,10 +325,12 @@ export function CalendarView({
     setTitle(session.title);
     setScheduledAt(toDateTimeLocal(new Date(session.scheduledAt)));
     setDurationMinutes(session.durationMinutes);
+    setDeliveryType((session as any).deliveryType || "video"); // EKLENDİ
   };
 
   return (
     <div className="p-4 sm:p-6 flex flex-col xl:flex-row gap-6 min-h-full">
+      {/* SOL: TAKVİM IZGARASI */}
       <div className="flex-1 min-w-0 flex flex-col">
         <div className="flex flex-wrap items-center gap-3 mb-5">
           <div>
@@ -438,7 +452,10 @@ export function CalendarView({
         </div>
       </div>
 
+      {/* SAĞ: SEÇİLİ GÜN & FORM */}
       <div className="w-full xl:w-96 flex-shrink-0 flex flex-col gap-4">
+        
+        {/* Seçili Gün Görüşmeleri */}
         <div className="p-5 rounded-2xl border border-border bg-card shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -465,9 +482,11 @@ export function CalendarView({
               Bu gün için görüşme yok.
             </div>
           ) : (
-            <div className="space-y-3 max-h-[34rem] overflow-y-auto pr-1">
+            <div className="space-y-3 max-h-[22rem] overflow-y-auto pr-1">
               {selectedSessions.map((session) => {
                 const config = getSessionStatusConfig(session.status);
+                // Dinamik Delivery Type Kontrolü
+                const isVideo = (session as any).deliveryType !== "in_person";
 
                 return (
                   <motion.div
@@ -501,8 +520,10 @@ export function CalendarView({
                         })}
                       </span>
                       <span>{session.durationMinutes} dk</span>
+                      
+                      {/* EKLENEN ÖZELLİK: Dinamik Görüşme Tipi İkonu */}
                       <span className="flex items-center gap-1">
-                        <Video size={11} /> Video
+                        {isVideo ? <><Video size={11} /> Video</> : <><MapPin size={11} /> Yüz Yüze</>}
                       </span>
                     </div>
 
@@ -531,6 +552,7 @@ export function CalendarView({
           )}
         </div>
 
+        {/* Görüşme Oluşturma / Düzenleme Formu */}
         <div className="p-5 rounded-2xl border border-border bg-card shadow-sm space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h4 className="font-bold text-foreground">
@@ -539,7 +561,7 @@ export function CalendarView({
             {editingSessionId && (
               <button
                 type="button"
-                onClick={resetForm}
+                onClick={() => resetForm()}
                 className="text-xs text-muted-foreground hover:text-foreground">
                 Vazgeç
               </button>
@@ -572,12 +594,14 @@ export function CalendarView({
                   </option>
                 ))}
               </select>
+              
               <input
                 value={skillName}
                 readOnly
                 className="w-full px-3 py-2 rounded-xl border border-border bg-muted text-sm outline-none"
                 placeholder="Eşleşilen beceri"
               />
+              
               <input
                 value={title}
                 disabled={Boolean(editingSessionId)}
@@ -585,6 +609,25 @@ export function CalendarView({
                 className="w-full px-3 py-2 rounded-xl border border-border bg-background text-sm outline-none disabled:opacity-60"
                 placeholder="Başlık"
               />
+
+              {/* EKLENEN ÖZELLİK: Görüşme Tipi Seçici */}
+              <div className="flex gap-2 p-1 bg-muted/50 rounded-xl border border-border">
+                <button
+                  type="button"
+                  onClick={() => setDeliveryType("video")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${deliveryType === "video" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Video size={14} /> Online
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeliveryType("in_person")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${deliveryType === "in_person" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <MapPin size={14} /> Yüz Yüze
+                </button>
+              </div>
+              
               <input
                 type="datetime-local"
                 min={toDateTimeLocal(new Date())}
@@ -592,6 +635,7 @@ export function CalendarView({
                 onChange={(event) => setScheduledAt(event.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-border bg-background text-sm outline-none"
               />
+              
               <select
                 value={durationMinutes}
                 onChange={(event) => setDurationMinutes(Number(event.target.value))}
@@ -602,11 +646,32 @@ export function CalendarView({
                   </option>
                 ))}
               </select>
+
+              {/* EKLENEN ÖZELLİK: Dinamik Güvenlik ve Bilgi Kutusu */}
+              <AnimatePresence mode="wait">
+                {deliveryType === "in_person" ? (
+                  <motion.div key="in_person_alert" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                    <ShieldAlert size={16} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-[11px] font-medium text-emerald-800 leading-relaxed">
+                      <strong className="block mb-0.5">Güvenlik Tavsiyesi</strong>
+                      İlk görüşmelerinizi kampüs içi kütüphane veya kafe gibi ortak alanlarda yapmanızı öneririz.
+                    </p>
+                  </motion.div>
+                ) : (
+                  <motion.div key="video_alert" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-50 border border-blue-100">
+                    <Sparkles size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-[11px] font-medium text-blue-800 leading-relaxed">
+                      Görüşme onaylandığında <strong>görüntülü oda linki</strong> otomatik olarak oluşturulup takvime eklenecektir.
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <button
                 type="button"
                 onClick={submitSession}
                 disabled={!selectedMatch || !scheduledAt || saving}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-3 mt-1 rounded-xl text-white text-sm font-semibold disabled:opacity-50 transition-opacity hover:opacity-90"
                 style={{ background: "var(--sb-gradient)" }}>
                 {editingSessionId ? <RotateCcw size={15} /> : <Plus size={15} />}
                 {saving
