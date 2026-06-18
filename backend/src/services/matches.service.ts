@@ -1,8 +1,38 @@
 import { getPrismaClient } from "../lib/prisma.js";
+import { createNotificationSafely } from "./notifications.service.js";
 
 type GetAiPicksParams = {
   userId: string;
   limit?: number;
+};
+
+type SelectMatchParams = {
+  userId: string;
+  otherUserId: string;
+  skillName: string;
+  matchScore?: number;
+};
+
+type SelectedMatchRow = {
+  id: string;
+  user_id: string | null;
+  matched_user_id: string | null;
+  skill_name: string | null;
+  status: string | null;
+  match_score: number | null;
+  was_created: boolean;
+};
+
+type CalendarMatchRow = {
+  id: string;
+  other_user_id: string;
+  skill_name: string | null;
+  status: string | null;
+  match_score: number | null;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
 };
 
 type AiPickRow = {
@@ -113,8 +143,7 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
     LIMIT ${take};
   `;
 
-  if (matches.length > 0) {
-    return matches.map((match) => {
+  const persistedPicks = matches.map((match) => {
       const isCurrentUserOwner = match.user_id === userId;
       const otherUserId = match.other_user_id ?? (isCurrentUserOwner ? match.matched_user_id : match.user_id);
 
@@ -141,7 +170,12 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         createdAt: match.created_at,
       };
     });
-  }
+
+  const persistedPeerIds = new Set(
+    persistedPicks
+      .map((pick) => pick.otherUserId)
+      .filter((peerId): peerId is string => Boolean(peerId)),
+  );
 
   const profiles = await prisma.$queryRaw<ProfilePickRow[]>`
     SELECT
@@ -186,7 +220,8 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
     normalizeSkillList(currentProfile?.teaches).map(normalizeSkillKey),
   );
 
-  return profiles
+  const recommendedPicks = profiles
+    .filter((profile) => !persistedPeerIds.has(profile.id))
     .map((profile) => {
       const teaches = normalizeSkillList(profile.teaches);
       const learns = normalizeSkillList(profile.learns);
@@ -215,8 +250,192 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         createdAt: null,
       };
     })
+    .sort((left, right) => right.matchScore - left.matchScore || left.name.localeCompare(right.name, "tr"));
+
+  return [...persistedPicks, ...recommendedPicks]
     .sort((left, right) => right.matchScore - left.matchScore || left.name.localeCompare(right.name, "tr"))
     .slice(0, take);
+}
+
+export async function selectMatch({
+  userId,
+  otherUserId,
+  skillName,
+  matchScore,
+}: SelectMatchParams) {
+  const prisma = getPrismaClient();
+  const cleanedSkillName = skillName.trim();
+  const normalizedScore = Math.min(Math.max(Math.round(matchScore ?? 0), 0), 100);
+
+  const targetProfiles = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id
+    FROM public.profiles
+    WHERE id::text = ${otherUserId}
+      AND id::text <> ${userId}
+      AND (
+        coalesce(profile_public, true) = true
+        OR EXISTS (
+          SELECT 1
+          FROM public.matches
+          WHERE (
+              user_id::text = ${userId}
+              AND matched_user_id::text = ${otherUserId}
+            )
+            OR (
+              user_id::text = ${otherUserId}
+              AND matched_user_id::text = ${userId}
+            )
+        )
+      )
+    LIMIT 1;
+  `;
+
+  if (targetProfiles.length === 0) {
+    throw new Error("MATCH_TARGET_NOT_AVAILABLE");
+  }
+
+  const rows = await prisma.$queryRaw<SelectedMatchRow[]>`
+    WITH existing_match AS (
+      SELECT id
+      FROM public.matches
+      WHERE (
+          user_id::text = ${userId}
+          AND matched_user_id::text = ${otherUserId}
+        )
+        OR (
+          user_id::text = ${otherUserId}
+          AND matched_user_id::text = ${userId}
+        )
+      ORDER BY created_at DESC NULLS LAST
+      LIMIT 1
+    ),
+    updated_match AS (
+      UPDATE public.matches
+      SET
+        skill_name = ${cleanedSkillName},
+        matched_skill_name = ${cleanedSkillName},
+        match_score = greatest(coalesce(match_score, 0), ${normalizedScore}),
+        status = CASE
+          WHEN lower(coalesce(status::text, 'recommended')) IN ('rejected', 'declined', 'cancelled')
+            THEN 'recommended'
+          ELSE status
+        END
+      WHERE id = (SELECT id FROM existing_match)
+      RETURNING
+        id,
+        user_id,
+        matched_user_id,
+        skill_name,
+        status::text,
+        match_score,
+        false AS was_created
+    ),
+    inserted_match AS (
+      INSERT INTO public.matches (
+        user_id,
+        matched_user_id,
+        skill_name,
+        matched_skill_name,
+        match_score,
+        status
+      )
+      SELECT
+        ${userId}::uuid,
+        ${otherUserId}::uuid,
+        ${cleanedSkillName},
+        ${cleanedSkillName},
+        ${normalizedScore},
+        'recommended'
+      WHERE NOT EXISTS (SELECT 1 FROM updated_match)
+      RETURNING
+        id,
+        user_id,
+        matched_user_id,
+        skill_name,
+        status::text,
+        match_score,
+        true AS was_created
+    )
+    SELECT * FROM updated_match
+    UNION ALL
+    SELECT * FROM inserted_match
+    LIMIT 1;
+  `;
+
+  const match = rows[0];
+
+  if (match.was_created) {
+    await createNotificationSafely({
+      userId: otherUserId,
+      actorId: userId,
+      type: "MATCH",
+      title: "Yeni beceri eşleşmesi",
+      message: `${cleanedSkillName} becerisi için yeni bir eşleşmen var.`,
+      metadata: {
+        matchId: match.id,
+        peerId: userId,
+        skillName: cleanedSkillName,
+      },
+      relatedUrl: "matches",
+    });
+  }
+
+  return {
+    matchId: match.id,
+    otherUserId,
+    skillName: match.skill_name ?? cleanedSkillName,
+    status: match.status ?? "recommended",
+    matchScore: match.match_score ?? normalizedScore,
+  };
+}
+
+export async function listSelectedMatches(userId: string) {
+  const prisma = getPrismaClient();
+  const rows = await prisma.$queryRaw<CalendarMatchRow[]>`
+    WITH matched_rows AS (
+      SELECT
+        matches.id,
+        CASE
+          WHEN matches.user_id::text = ${userId}
+            THEN matches.matched_user_id
+          ELSE matches.user_id
+        END AS other_user_id,
+        coalesce(nullif(matches.skill_name, ''), nullif(matches.matched_skill_name, ''), 'Beceri paylaşımı') AS skill_name,
+        matches.status::text AS status,
+        matches.match_score,
+        matches.created_at
+      FROM public.matches
+      WHERE (
+          matches.user_id::text = ${userId}
+          OR matches.matched_user_id::text = ${userId}
+        )
+        AND lower(coalesce(matches.status::text, 'recommended'))
+          NOT IN ('rejected', 'declined', 'cancelled')
+    )
+    SELECT DISTINCT ON (matched_rows.other_user_id)
+      matched_rows.id,
+      matched_rows.other_user_id,
+      matched_rows.skill_name,
+      matched_rows.status,
+      matched_rows.match_score,
+      profiles.full_name,
+      profiles.first_name,
+      profiles.last_name,
+      profiles.avatar_url
+    FROM matched_rows
+    JOIN public.profiles ON profiles.id = matched_rows.other_user_id
+    ORDER BY matched_rows.other_user_id, matched_rows.created_at DESC NULLS LAST;
+  `;
+
+  return rows.map((row) => ({
+    matchId: row.id,
+    otherUserId: row.other_user_id,
+    name: getProfileName(row),
+    avatarUrl: row.avatar_url,
+    skillName: row.skill_name ?? "Beceri paylaşımı",
+    status: row.status ?? "recommended",
+    matchScore: row.match_score ?? 0,
+  }));
 }
 
 export async function getAiPicksLegacy({ userId, limit }: GetAiPicksParams) {

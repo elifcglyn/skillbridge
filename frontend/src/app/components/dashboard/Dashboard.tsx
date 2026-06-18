@@ -61,6 +61,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState("Öğrenci");
   const [userSchoolInfo, setUserSchoolInfo] = useState("Üniversite Öğrencisi");
+  const [messagePeerId, setMessagePeerId] = useState<string | null>(null);
+  const [calendarPeerId, setCalendarPeerId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<SkillBridgeNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
@@ -84,30 +86,60 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   };
 
   const refreshCounts = async (userId: string) => {
-    const messageCountQuery = supabase
-      .from("messages")
-      .select("*", { count: "exact", head: true })
-      .eq("receiver_id", userId)
-      .or("is_read.eq.false,is_read.is.null");
+    const [
+      { data: messageMatches },
+      { count: matchCount },
+      { count: notifCount },
+    ] = await Promise.all([
+        supabase
+          .from("matches")
+          .select("user_id,matched_user_id,status")
+          .or(`user_id.eq.${userId},matched_user_id.eq.${userId}`),
+        supabase
+          .from("connections")
+          .select("*", { count: "exact", head: true })
+          .eq("receiver_id", userId)
+          .eq("status", "pending"),
+        supabase
+          .from("notifications")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .eq("is_read", false)
+          .is("dismissed_at", null),
+      ]);
 
-    const [{ count: matchCount }, { count: msgCount }, { count: notifCount }] = await Promise.all([
-      supabase
-        .from("connections")
+    const matchedPeerIds = Array.from(
+      new Set(
+        (messageMatches ?? [])
+          .filter(
+            (match) =>
+              !["rejected", "declined", "cancelled"].includes(
+                (match.status || "recommended").toLowerCase(),
+              ),
+          )
+          .map((match) => {
+            return match.user_id === userId
+              ? match.matched_user_id
+              : match.user_id;
+          })
+          .filter((peerId): peerId is string => Boolean(peerId)),
+      ),
+    );
+
+    let msgCount = 0;
+    if (matchedPeerIds.length > 0) {
+      const { count } = await supabase
+        .from("messages")
         .select("*", { count: "exact", head: true })
         .eq("receiver_id", userId)
-        .eq("status", "pending"),
-      messageCountQuery,
-      supabase
-        .from("notifications")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("is_read", false)
-        .is("dismissed_at", null),
-    ]);
+        .in("sender_id", matchedPeerIds)
+        .or("is_read.eq.false,is_read.is.null");
+      msgCount = count || 0;
+    }
 
     setBadgeCounts({
       matches: matchCount || 0,
-      messages: msgCount || 0,
+      messages: msgCount,
       notifications: notifCount || 0,
     });
   };
@@ -116,6 +148,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     if (currentUserId) {
       await refreshCounts(currentUserId);
     }
+  };
+
+  const openMessages = (peerId: string) => {
+    setCalendarPeerId(null);
+    setMessagePeerId(peerId);
+    setActiveView("messages");
+  };
+
+  const openCalendar = (peerId: string) => {
+    setMessagePeerId(null);
+    setCalendarPeerId(peerId);
+    setActiveView("calendar");
   };
 
   useEffect(() => {
@@ -165,6 +209,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const channel = supabase
       .channel("sidebar_badges")
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refresh)
       .subscribe();
@@ -211,11 +256,39 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   ) => {
     const updated = await updateNotificationActionStatus(notificationId, actionStatus);
     setNotifications((items) => items.map((item) => (item.id === notificationId ? updated : item)));
+    if (currentUserId) await refreshCounts(currentUserId);
   };
 
   const handleNotificationOpen = async (notification: SkillBridgeNotification) => {
     if (!notification.is_read) {
       await handleMarkNotificationRead(notification.id);
+    }
+
+    const peerId =
+      typeof notification.metadata.peerId === "string"
+        ? notification.metadata.peerId
+        : null;
+
+    if (notification.type === "MESSAGE" && peerId) {
+      openMessages(peerId);
+      return;
+    }
+    if (notification.type === "SESSION") {
+      if (peerId) {
+        openCalendar(peerId);
+      } else {
+        setActiveView("calendar");
+      }
+      return;
+    }
+    if (notification.type === "MATCH") {
+      setActiveView("matches");
+      return;
+    }
+
+    const target = notification.related_url?.replace(/^\/+/, "");
+    if (target && NAV_ITEMS.some((item) => item.id === target)) {
+      setActiveView(target);
     }
   };
 
@@ -226,11 +299,22 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       case "profile":
         return <ProfileView />;
       case "matches":
-        return <MatchesView onNavigate={setActiveView} />;
+        return (
+          <MatchesView
+            onNavigate={setActiveView}
+            onOpenMessages={openMessages}
+            onOpenCalendar={openCalendar}
+          />
+        );
       case "messages":
-        return <MessagesView onMessagesRead={handleMessagesRead} />;
+        return (
+          <MessagesView
+            initialPeerId={messagePeerId}
+            onMessagesRead={handleMessagesRead}
+          />
+        );
       case "calendar":
-        return <CalendarView />;
+        return <CalendarView initialPeerId={calendarPeerId} />;
       case "notifications":
         return (
           <NotificationsView
@@ -252,7 +336,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       case "progress":
         return <SkillProgressView />;
       case "findmatch":
-        return <FindMatchView onNavigate={setActiveView} />;
+        return (
+          <FindMatchView
+            onNavigate={setActiveView}
+            onOpenMessages={openMessages}
+            onOpenCalendar={openCalendar}
+          />
+        );
       default:
         return <HomeView onNavigate={setActiveView} />;
     }
@@ -310,6 +400,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <button
                   key={item.id}
                   onClick={() => {
+                    setMessagePeerId(null);
+                    setCalendarPeerId(null);
                     setActiveView(item.id);
                     setSidebarOpen(false);
                   }}

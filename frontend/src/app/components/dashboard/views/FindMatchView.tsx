@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Calendar, MessageSquare, RotateCcw, Search, Sparkles } from "lucide-react";
-import { apiGet, withQuery } from "@/lib/api";
+import { apiGet, apiSend, withQuery } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
 const SKILL_OPTIONS = [
@@ -21,6 +21,8 @@ type Step = "select" | "spinning" | "result";
 
 interface FindMatchViewProps {
   onNavigate: (view: string) => void;
+  onOpenMessages: (peerId: string) => void;
+  onOpenCalendar: (peerId: string) => void;
 }
 
 type AiPick = {
@@ -39,7 +41,11 @@ function avatarFor(name: string, avatarUrl?: string | null) {
   return avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "U")}&background=random&color=fff&size=200`;
 }
 
-export function FindMatchView({ onNavigate }: FindMatchViewProps) {
+export function FindMatchView({
+  onNavigate,
+  onOpenMessages,
+  onOpenCalendar,
+}: FindMatchViewProps) {
   const [step, setStep] = useState<Step>("select");
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const [customSkill, setCustomSkill] = useState("");
@@ -47,6 +53,8 @@ export function FindMatchView({ onNavigate }: FindMatchViewProps) {
   const [loading, setLoading] = useState(true);
   const [aiPicks, setAiPicks] = useState<AiPick[]>([]);
   const [matchedUser, setMatchedUser] = useState<AiPick | null>(null);
+  const [openingMessages, setOpeningMessages] = useState(false);
+  const [openingCalendar, setOpeningCalendar] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -94,7 +102,6 @@ export function FindMatchView({ onNavigate }: FindMatchViewProps) {
           .filter(Boolean)
           .some((value) => value.toLocaleLowerCase("tr-TR").includes(searchTerm)),
       )
-      ?? aiPicks[0]
       ?? null;
 
     window.setTimeout(() => {
@@ -107,6 +114,63 @@ export function FindMatchView({ onNavigate }: FindMatchViewProps) {
     setStep("select");
     setSelectedSkill(null);
     setMatchedUser(null);
+  };
+
+  const persistSelectedMatch = async () => {
+    if (!matchedUser || !selectedSkill) return null;
+    const searchTerm = selectedSkill.toLocaleLowerCase("tr-TR").trim();
+    const matchedSkill =
+      matchedUser.teaches.find((skill) =>
+        skill.toLocaleLowerCase("tr-TR").includes(searchTerm),
+      ) ||
+      matchedUser.skillName ||
+      selectedSkill;
+
+    return apiSend<{ data: { matchId: string } }>("/api/matches/selection", "POST", {
+      otherUserId: matchedUser.otherUserId,
+      skillName: matchedSkill,
+      matchScore: matchedUser.matchScore,
+    });
+  };
+
+  const handleOpenMessages = async () => {
+    if (!matchedUser || !selectedSkill || openingMessages || openingCalendar) return;
+
+    setOpeningMessages(true);
+    setError(null);
+
+    try {
+      await persistSelectedMatch();
+      onOpenMessages(matchedUser.otherUserId);
+    } catch (selectionError) {
+      setError(
+        selectionError instanceof Error
+          ? selectionError.message
+          : "Eşleşme kaydedilemedi.",
+      );
+    } finally {
+      setOpeningMessages(false);
+    }
+  };
+
+  const handleOpenCalendar = async () => {
+    if (!matchedUser || !selectedSkill || openingMessages || openingCalendar) return;
+
+    setOpeningCalendar(true);
+    setError(null);
+
+    try {
+      await persistSelectedMatch();
+      onOpenCalendar(matchedUser.otherUserId);
+    } catch (selectionError) {
+      setError(
+        selectionError instanceof Error
+          ? selectionError.message
+          : "Eşleşme kaydedilemedi.",
+      );
+    } finally {
+      setOpeningCalendar(false);
+    }
   };
 
   if (loading) {
@@ -211,15 +275,19 @@ export function FindMatchView({ onNavigate }: FindMatchViewProps) {
 
                   <div className="relative z-10 flex gap-2 mt-4">
                     <button
-                      onClick={() => {
-                        localStorage.setItem("active_chat_partner_id", matchedUser.otherUserId);
-                        onNavigate("messages");
-                      }}
-                      className="flex-1 py-3 rounded-xl border border-border font-semibold text-sm text-foreground hover:bg-muted flex items-center justify-center gap-1.5 shadow-sm">
-                      <MessageSquare size={16} /> Mesaj Gönder
+                      onClick={handleOpenMessages}
+                      disabled={openingMessages}
+                      className="flex-1 py-3 rounded-xl border border-border font-semibold text-sm text-foreground hover:bg-muted flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50 disabled:hover:bg-transparent">
+                      <MessageSquare size={16} />
+                      {openingMessages ? "Açılıyor..." : "Mesaj Gönder"}
                     </button>
-                    <button onClick={() => onNavigate("calendar")} className="flex-1 py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-1.5 shadow-md hover:scale-[1.02]" style={{ background: "var(--sb-gradient)" }}>
-                      <Calendar size={16} /> Görüşme Planla
+                    <button
+                      onClick={handleOpenCalendar}
+                      disabled={openingCalendar || openingMessages}
+                      className="flex-1 py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-1.5 shadow-md hover:scale-[1.02] disabled:opacity-50"
+                      style={{ background: "var(--sb-gradient)" }}>
+                      <Calendar size={16} />
+                      {openingCalendar ? "Açılıyor..." : "Görüşme Planla"}
                     </button>
                   </div>
                 </div>

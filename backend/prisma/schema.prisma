@@ -71,13 +71,22 @@ model Message {
 }
 
 model Notification {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String?   @map("user_id") @db.Uuid
-  type        String
-  content     String
-  isRead      Boolean?  @default(false) @map("is_read")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  dismissedAt DateTime? @map("dismissed_at") @db.Timestamptz(6)
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String?   @map("user_id") @db.Uuid
+  title          String
+  message        String
+  description    String    @default("")
+  type           String
+  content        String
+  actorName      String?   @map("actor_name")
+  actorAvatarUrl String?   @map("actor_avatar_url")
+  actionStatus   String    @default("none") @map("action_status")
+  metadata       Json      @default("{}")
+  relatedUrl     String?   @map("related_url")
+  isRead         Boolean?  @default(false) @map("is_read")
+  readAt         DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  dismissedAt    DateTime? @map("dismissed_at") @db.Timestamptz(6)
 
   @@index([userId, isRead, createdAt(sort: Desc)], map: "notifications_user_read_created_idx")
   @@index([userId, dismissedAt, createdAt(sort: Desc)], map: "notifications_user_visible_idx")
@@ -87,6 +96,7 @@ model Notification {
 
 model Session {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId         String?  @map("match_id") @db.Uuid
   mentorId        String?  @map("mentor_id") @db.Uuid
   studentId       String?  @map("student_id") @db.Uuid
   learnerId       String?  @map("learner_id") @db.Uuid
@@ -104,6 +114,7 @@ model Session {
   @@index([mentorId, scheduledAt], map: "sessions_mentor_scheduled_idx")
   @@index([studentId, scheduledAt], map: "sessions_student_scheduled_idx")
   @@index([learnerId, scheduledAt], map: "sessions_learner_scheduled_idx")
+  @@index([matchId, scheduledAt], map: "sessions_match_scheduled_idx")
   @@map("sessions")
   @@schema("public")
 }

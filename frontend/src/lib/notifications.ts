@@ -1,14 +1,29 @@
+import { apiSend } from "./api";
 import { supabase } from "./supabase";
 
 export type NotificationType = "MATCH" | "MESSAGE" | "SESSION" | "FEEDBACK" | "SYSTEM";
-export type NotificationActionStatus = "none" | "pending" | "accepted" | "declined";
+export type NotificationActionStatus =
+  | "none"
+  | "pending"
+  | "accepted"
+  | "declined"
+  | "cancelled";
 
 interface NotificationRow {
   id: string;
   user_id?: string | null;
   type: string;
-  content: string;
+  title?: string | null;
+  message?: string | null;
+  description?: string | null;
+  content?: string | null;
+  actor_name?: string | null;
+  actor_avatar_url?: string | null;
+  action_status?: string | null;
+  metadata?: unknown;
+  related_url?: string | null;
   is_read?: boolean | null;
+  read_at?: string | null;
   dismissed_at?: string | null;
   created_at: string;
 }
@@ -51,25 +66,40 @@ function getNotificationTitle(type: NotificationType) {
   return "Bildirim";
 }
 
+function normalizeActionStatus(value?: string | null): NotificationActionStatus {
+  if (value === "pending") return "pending";
+  if (value === "accepted") return "accepted";
+  if (value === "declined") return "declined";
+  if (value === "cancelled") return "cancelled";
+  return "none";
+}
+
+function normalizeMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 function normalizeNotification(row: NotificationRow): SkillBridgeNotification {
   const type = normalizeNotificationType(row.type);
-  const message = row.content || "";
+  const message = row.message || row.description || row.content || "";
+  const relatedUrl = row.related_url ?? null;
 
   return {
     id: row.id,
     user_id: row.user_id ?? null,
     type,
-    title: getNotificationTitle(type),
+    title: row.title?.trim() || getNotificationTitle(type),
     message,
-    description: message,
-    actor_name: null,
-    actor_avatar_url: null,
-    action_status: "none",
-    metadata: {},
+    description: row.description || message,
+    actor_name: row.actor_name ?? null,
+    actor_avatar_url: row.actor_avatar_url ?? null,
+    action_status: normalizeActionStatus(row.action_status),
+    metadata: normalizeMetadata(row.metadata),
     is_read: row.is_read ?? false,
-    relatedUrl: null,
-    related_url: null,
-    read_at: null,
+    relatedUrl,
+    related_url: relatedUrl,
+    read_at: row.read_at ?? null,
     dismissed_at: row.dismissed_at ?? null,
     created_at: row.created_at,
   };
@@ -127,15 +157,10 @@ export async function updateNotificationActionStatus(
   notificationId: string,
   actionStatus: Extract<NotificationActionStatus, "accepted" | "declined">,
 ) {
-  const { data, error } = await supabase
-    .from("notifications")
-    .update({
-      is_read: true,
-    })
-    .eq("id", notificationId)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return normalizeNotification(data as NotificationRow);
+  const response = await apiSend<{ data: NotificationRow }>(
+    `/api/notifications/${notificationId}/action`,
+    "POST",
+    { actionStatus },
+  );
+  return normalizeNotification(response.data);
 }
