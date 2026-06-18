@@ -9,6 +9,7 @@ import { getHomeDashboard, type HomeDashboardData } from "@/lib/homeDashboard";
 
 interface HomeViewProps {
   onNavigate: (view: string) => void;
+  onOpenSession?: (sessionId: string) => void;
   dashboardData?: HomeDashboardData | null;
   loading?: boolean;
   error?: string | null;
@@ -81,7 +82,14 @@ function getFallbackDashboard(): HomeDashboardData {
   };
 }
 
-export function HomeView({ onNavigate, dashboardData, loading, error, onRefresh }: HomeViewProps) {
+export function HomeView({
+  onNavigate,
+  onOpenSession,
+  dashboardData,
+  loading,
+  error,
+  onRefresh,
+}: HomeViewProps) {
   const [localData, setLocalData] = useState<HomeDashboardData | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -279,7 +287,7 @@ export function HomeView({ onNavigate, dashboardData, loading, error, onRefresh 
           <div className="p-5 rounded-2xl border border-border bg-card">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-foreground">Yaklaşan Görüşmeler</h3>
-              <button onClick={() => onNavigate("calendar")} className="text-xs text-primary font-medium hover:underline">Takvim</button>
+              <button onClick={() => onNavigate("sessions")} className="text-xs text-primary font-medium hover:underline">Görüşmeler</button>
             </div>
             <div className="space-y-2.5">
               {data.upcomingSessions.length === 0 ? (
@@ -288,7 +296,15 @@ export function HomeView({ onNavigate, dashboardData, loading, error, onRefresh 
                 const [dateLabel, timeLabel = ""] = session.time.split(",").map(part => part.trim());
 
                 return (
-                  <div key={session.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 cursor-pointer transition-all">
+                  <button
+                    type="button"
+                    key={session.id}
+                    onClick={() =>
+                      onOpenSession
+                        ? onOpenSession(session.id)
+                        : onNavigate("sessions")
+                    }
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 cursor-pointer transition-all text-left">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
                       style={{ background: `${session.color}14` }}>
                       {session.emoji}
@@ -298,7 +314,7 @@ export function HomeView({ onNavigate, dashboardData, loading, error, onRefresh 
                       <div className="text-xs text-muted-foreground">{session.mentor} ile</div>
                     </div>
                     <div className="text-xs text-muted-foreground text-right whitespace-nowrap">{dateLabel}<br />{timeLabel}</div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
