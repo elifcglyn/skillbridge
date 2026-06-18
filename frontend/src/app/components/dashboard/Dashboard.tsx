@@ -465,16 +465,21 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </AnimatePresence>
 
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 lg:z-auto flex flex-col w-64 transition-transform duration-300 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
-        style={{ background: "var(--sidebar)" }}>
-        <div className="flex items-center gap-2.5 px-5 py-5 border-b" style={{ borderColor: "var(--sidebar-border)" }}>
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg" style={{ background: "var(--sb-gradient)" }}>
-            <Sparkles size={19} className="text-white" />
-          </div>
-          <span className="font-extrabold text-lg" style={{ color: "var(--sidebar-foreground)" }}>SkillBridge</span>
-        </div>
+  className={`fixed lg:static inset-y-0 left-0 z-40 lg:z-auto flex flex-col w-64 transition-transform duration-300 ${
+    sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+  }`}
+  style={{ background: "var(--sidebar)" }}>
+  
+  {/* GÜNCELLENMİŞ MİNİMALİST LOGO */}
+  <div 
+    className="px-6 py-8 cursor-pointer border-b" 
+    style={{ borderColor: "var(--sidebar-border)" }}
+    onClick={() => setActiveView("home")}
+  >
+    <span className="text-2xl font-extrabold tracking-tight" style={{ color: "var(--sidebar-foreground)" }}>
+      SkillBridge
+    </span>
+  </div>
 
         <div className="px-4 py-4 border-b" style={{ borderColor: "var(--sidebar-border)" }}>
           <div className="flex items-center gap-3 p-3 rounded-2xl" style={{ background: "var(--sidebar-accent)" }}>
