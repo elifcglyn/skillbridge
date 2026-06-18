@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Calendar, Check, Filter, MapPin, MessageSquare, Star, X, Zap } from "lucide-react";
-import { apiGet, withQuery } from "@/lib/api";
+import { apiGet, apiSend, withQuery } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
 type TabType = "recommended" | "pending" | "accepted" | "nearby";
 
 interface MatchesViewProps {
   onNavigate: (view: string) => void;
+  onOpenMessages: (peerId: string) => void;
+  onOpenCalendar: (peerId: string) => void;
 }
 
 type AiPick = {
@@ -48,13 +50,19 @@ function avatarFor(match: MatchCard) {
   return match.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.name || "U")}&background=random&color=fff&size=150`;
 }
 
-export function MatchesView({ onNavigate }: MatchesViewProps) {
+export function MatchesView({
+  onNavigate,
+  onOpenMessages,
+  onOpenCalendar,
+}: MatchesViewProps) {
   const [matches, setMatches] = useState<MatchCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("recommended");
   const [selectedMatch, setSelectedMatch] = useState<MatchCard | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [openingPeerId, setOpeningPeerId] = useState<string | null>(null);
+  const [openingCalendarPeerId, setOpeningCalendarPeerId] = useState<string | null>(null);
 
   const loadMatches = async () => {
     setLoading(true);
@@ -128,6 +136,54 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
         item.connectionId === match.connectionId ? { ...item, connectionStatus: status } : item,
       ),
     );
+  };
+
+  const handleOpenMessages = async (match: MatchCard) => {
+    if (openingPeerId || openingCalendarPeerId) return;
+
+    setOpeningPeerId(match.otherUserId);
+    setError(null);
+
+    try {
+      await apiSend("/api/matches/selection", "POST", {
+        otherUserId: match.otherUserId,
+        skillName: match.skillName || match.teaches[0] || "Beceri paylaşımı",
+        matchScore: match.matchScore,
+      });
+      onOpenMessages(match.otherUserId);
+    } catch (selectionError) {
+      setError(
+        selectionError instanceof Error
+          ? selectionError.message
+          : "Eşleşme kaydedilemedi.",
+      );
+    } finally {
+      setOpeningPeerId(null);
+    }
+  };
+
+  const handleOpenCalendar = async (match: MatchCard) => {
+    if (openingPeerId || openingCalendarPeerId) return;
+
+    setOpeningCalendarPeerId(match.otherUserId);
+    setError(null);
+
+    try {
+      await apiSend("/api/matches/selection", "POST", {
+        otherUserId: match.otherUserId,
+        skillName: match.skillName || match.teaches[0] || "Beceri paylaşımı",
+        matchScore: match.matchScore,
+      });
+      onOpenCalendar(match.otherUserId);
+    } catch (selectionError) {
+      setError(
+        selectionError instanceof Error
+          ? selectionError.message
+          : "Eşleşme kaydedilemedi.",
+      );
+    } finally {
+      setOpeningCalendarPeerId(null);
+    }
   };
 
   const tabs = useMemo(() => [
@@ -253,18 +309,25 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
                           <X size={14} />
                         </button>
                       </>
-                    ) : match.connectionStatus !== "pending" ? (
-                      <>
-                        <button onClick={(event) => { event.stopPropagation(); onNavigate("messages"); }} className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20">
-                          <MessageSquare size={14} />
-                        </button>
-                        <button onClick={(event) => { event.stopPropagation(); onNavigate("calendar"); }} className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 hover:bg-purple-500/20">
-                          <Calendar size={14} />
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-[10px] font-semibold text-amber-600">Yanıt bekleniyor</span>
-                    )}
+                    ) : null}
+                    <button
+                      disabled={openingPeerId === match.otherUserId}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleOpenMessages(match);
+                      }}
+                      className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40">
+                      <MessageSquare size={14} />
+                    </button>
+                    <button
+                      disabled={openingCalendarPeerId === match.otherUserId}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleOpenCalendar(match);
+                      }}
+                      className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 disabled:opacity-40">
+                      <Calendar size={14} />
+                    </button>
                   </div>
                 </div>
               </motion.div>

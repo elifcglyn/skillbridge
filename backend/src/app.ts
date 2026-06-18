@@ -4,6 +4,7 @@ import { requireAuth } from "./middleware/auth.middleware.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import matchesRoutes from "./routes/matches.routes.js";
+import notificationsRoutes from "./routes/notifications.routes.js";
 import profilesRoutes from "./routes/profiles.routes.js";
 import sessionsRoutes from "./routes/sessions.routes.js";
 
@@ -23,6 +24,7 @@ app.use("/health", healthRoutes);
 app.use("/api", requireAuth);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/matches", matchesRoutes);
+app.use("/api/notifications", notificationsRoutes);
 app.use("/api/profiles", profilesRoutes);
 app.use("/api/sessions", sessionsRoutes);
 
