@@ -11,6 +11,7 @@ type ProfileRow = {
   teaches: string[] | null;
   learns: string[] | null;
   skill_points: number | null;
+  coin_balance: number;
 };
 
 type SummaryRow = {
@@ -179,7 +180,8 @@ export async function getDashboard(userId: string) {
         department,
         teaches,
         learns,
-        skill_points
+        skill_points,
+        coin_balance
       FROM public.profiles
       WHERE id::text = ${userId}
       LIMIT 1;
@@ -221,10 +223,12 @@ export async function getDashboard(userId: string) {
             AND scheduled_at >= date_trunc('week', now())
         ) AS teaching_minutes_this_week,
         (
-          SELECT coalesce(sum(points), 0)::int
+          SELECT coalesce(sum(amount), 0)::int
           FROM public.point_events
           WHERE user_id::text = ${userId}
-            AND occurred_at >= date_trunc('week', now())
+            AND amount > 0
+            AND event_type <> 'opening_balance'
+            AND created_at >= date_trunc('week', now())
         ) AS weekly_points,
         (
           SELECT coalesce(round(avg(rating)::numeric, 1), 0)
@@ -517,6 +521,7 @@ export async function getDashboard(userId: string) {
   const summary = summaries[0];
   const sidebarCounts = sidebar[0];
   const skillPoints = toNumber(profile?.skill_points);
+  const coinBalance = toNumber(profile?.coin_balance);
   const level = calculateLevelProgress(skillPoints);
   const fullName = getName(profile);
   const firstName =
@@ -537,6 +542,7 @@ export async function getDashboard(userId: string) {
       schoolInfo,
       avatarUrl: profile?.avatar_url ?? null,
       skillPoints,
+      coinBalance,
       trustScore: toNumber(summary?.trust_score),
       reviewCount: summary?.review_count ?? 0,
       streakDays: streak[0]?.streak_days ?? 0,
@@ -640,6 +646,7 @@ export async function getDashboard(userId: string) {
       sessionCount: sidebarCounts?.session_count ?? 0,
       notificationCount: sidebarCounts?.notification_count ?? 0,
       skillPoints,
+      coinBalance,
       nextLevelPoints: level.nextLevelPoints,
       pointsToNextLevel: level.pointsToNextLevel,
       skillPointProgress: level.progress,

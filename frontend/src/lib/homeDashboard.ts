@@ -9,6 +9,7 @@ export interface HomeDashboardData {
     schoolInfo: string;
     avatarUrl: string | null;
     skillPoints: number;
+    coinBalance: number;
     trustScore: number;
     reviewCount: number;
     streakDays: number;
@@ -78,6 +79,7 @@ export interface HomeDashboardData {
     sessionCount: number;
     notificationCount: number;
     skillPoints: number;
+    coinBalance: number;
     nextLevelPoints: number;
     pointsToNextLevel: number;
     skillPointProgress: number;

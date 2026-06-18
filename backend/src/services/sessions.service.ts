@@ -246,6 +246,43 @@ async function assertNoSessionConflict(
   }
 }
 
+async function awardSessionCompletion(
+  executor: QueryExecutor,
+  params: {
+    userId: string;
+    sessionId: string;
+    eventType: "training_completed" | "training_taught";
+    description: string;
+  },
+) {
+  await executor.$queryRaw`
+    WITH inserted_event AS (
+      INSERT INTO public.point_events (
+        user_id,
+        amount,
+        event_type,
+        description,
+        related_session_id
+      )
+      VALUES (
+        ${params.userId}::uuid,
+        20,
+        ${params.eventType},
+        ${params.description},
+        ${params.sessionId}::uuid
+      )
+      ON CONFLICT DO NOTHING
+      RETURNING user_id, amount
+    )
+    UPDATE public.profiles
+    SET
+      coin_balance = public.profiles.coin_balance + inserted_event.amount,
+      skill_points = coalesce(public.profiles.skill_points, 0) + inserted_event.amount
+    FROM inserted_event
+    WHERE public.profiles.id = inserted_event.user_id;
+  `;
+}
+
 async function syncSessionNotifications(
   current: SessionRow,
   action: SessionAction,
@@ -731,6 +768,21 @@ export async function updateSession(params: UpdateSessionParams) {
         "CONCURRENT_UPDATE",
         "Görüşme başka bir işlem tarafından güncellendi. Listeyi yenileyip tekrar deneyin.",
       );
+    }
+
+    if (params.action === "complete") {
+      await awardSessionCompletion(executor, {
+        userId: learnerId,
+        sessionId: params.sessionId,
+        eventType: "training_completed",
+        description: `${current.skill_name || "Eğitim"} eğitimi tamamlandı`,
+      });
+      await awardSessionCompletion(executor, {
+        userId: mentorId,
+        sessionId: params.sessionId,
+        eventType: "training_taught",
+        description: `${current.skill_name || "Eğitim"} eğitimi verildi`,
+      });
     }
 
     const [updated] = await querySessions(

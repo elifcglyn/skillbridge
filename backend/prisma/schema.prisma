@@ -20,9 +20,40 @@ model Profile {
   learns        String[]
   profilePublic Boolean? @map("profile_public")
   skillPoints   Int?     @map("skill_points")
+  coinBalance   Int      @default(0) @map("coin_balance")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("profiles")
+  @@schema("public")
+}
+
+model PointEvent {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  amount           Int
+  eventType        String   @default("manual") @map("event_type")
+  description      String   @default("")
+  relatedSessionId String?  @map("related_session_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, createdAt(sort: Desc)], map: "point_events_user_created_idx")
+  @@map("point_events")
+  @@schema("public")
+}
+
+model MarketPurchase {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  productId      String   @map("product_id")
+  pointEventId   String   @unique(map: "market_purchases_point_event_id_key") @map("point_event_id") @db.Uuid
+  cost           Int
+  status         String   @default("active")
+  idempotencyKey String   @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, idempotencyKey], map: "market_purchases_user_idempotency_key")
+  @@index([userId, createdAt(sort: Desc)], map: "market_purchases_user_created_idx")
+  @@map("market_purchases")
   @@schema("public")
 }
 

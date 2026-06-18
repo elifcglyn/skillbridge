@@ -3,6 +3,7 @@ import type React from "react";
 import { BookOpen, Check, GraduationCap, Plus, Save, Shield, User, X, Mail, Phone, MapPin, Coins, Edit3 } from "lucide-react";
 import { motion } from "motion/react";
 import { apiGet, apiSend } from "@/lib/api";
+import { getCoinOverview } from "@/lib/coins";
 import { supabase } from "@/lib/supabase";
 
 type ProfileData = {
@@ -19,7 +20,8 @@ type ProfileData = {
   profilePublic: boolean;
   isEmailPublic: boolean;
   isPhonePublic: boolean;
-  skillPoints: number; // SkillCoin olarak gösterilecek
+  skillPoints: number;
+  coinBalance: number;
   classesTaken?: number;
   classesTaught?: number;
 };
@@ -53,7 +55,7 @@ export function ProfileView() {
   const [isEmailPublic, setIsEmailPublic] = useState(false);
   const [isPhonePublic, setIsPhonePublic] = useState(false);
   
-  const [skillPoints, setSkillPoints] = useState(0);
+  const [coinBalance, setCoinBalance] = useState(0);
   const [classesTaken, setClassesTaken] = useState(12); // UI Mock
   const [classesTaught, setClassesTaught] = useState(3); // UI Mock
 
@@ -72,7 +74,10 @@ export function ProfileView() {
         }
 
         setUserId(user.id);
-        const response = await apiGet<{ data: ProfileData | null }>("/api/profiles");
+        const [response, coins] = await Promise.all([
+          apiGet<{ data: ProfileData | null }>("/api/profiles"),
+          getCoinOverview(),
+        ]);
 
         const profile = response.data;
         const metadata = user.user_metadata ?? {};
@@ -88,7 +93,7 @@ export function ProfileView() {
         setProfilePublic(profile?.profilePublic ?? true);
         setIsEmailPublic(profile?.isEmailPublic ?? false);
         setIsPhonePublic(profile?.isPhonePublic ?? false);
-        setSkillPoints(profile?.skillPoints ?? 0);
+        setCoinBalance(coins.balance);
         setClassesTaken(profile?.classesTaken ?? 12);
         setClassesTaught(profile?.classesTaught ?? 3);
       } catch (loadError) {
@@ -121,7 +126,7 @@ export function ProfileView() {
         isPhonePublic
       });
 
-      setSkillPoints(response.data.skillPoints);
+      setCoinBalance(response.data.coinBalance);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (saveError) {
@@ -229,7 +234,7 @@ export function ProfileView() {
             <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-2xl border border-border/50">
               <div className="flex flex-col items-center px-4 py-2 bg-card rounded-xl shadow-sm border border-border/40 min-w-[80px]">
                 <span className="text-xl font-extrabold text-foreground flex items-center gap-1">
-                  {skillPoints} <Coins size={14} className="text-primary" />
+                  {coinBalance} <Coins size={14} className="text-primary" />
                 </span>
                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-0.5">SkillCoin</span>
               </div>

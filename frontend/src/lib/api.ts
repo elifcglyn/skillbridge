@@ -79,8 +79,13 @@ export async function apiGet<T>(path: string) {
   return apiRequest<T>(path);
 }
 
-export async function apiSend<T>(path: string, method: "POST" | "PUT" | "PATCH", body: unknown) {
-  const headers = new Headers();
+export async function apiSend<T>(
+  path: string,
+  method: "POST" | "PUT" | "PATCH",
+  body: unknown,
+  requestHeaders?: HeadersInit,
+) {
+  const headers = new Headers(requestHeaders);
   headers.set("content-type", "application/json");
 
   return apiRequest<T>(path, {

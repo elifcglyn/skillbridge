@@ -403,7 +403,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       case "settings":
         return <SettingsView />;
       case "rewards": // ÖDÜLLER SAYFASI YÖNLENDİRMESİ
-        return <RewardsView />;
+        return <RewardsView onBalanceChange={loadDashboard} />;
       case "notifications":
         return (
           <NotificationsView
@@ -569,13 +569,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </div>
         </nav>
 
-        {/* SKILLCOIN GÖSTERGESİ (GÜNCELLENDİ) */}
+        {/* SKILLCOIN VE SEVİYE PUANI */}
         <div className="px-4 py-4">
           <div className="p-3 rounded-2xl border" style={{ background: "rgba(129,140,248,0.1)", borderColor: "var(--sidebar-border)" }}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
                 <Coins size={14} style={{ color: "var(--sb-cyan)" }} />
-                <span className="text-xs font-semibold" style={{ color: "var(--sidebar-foreground)" }}>SkillCoin</span>
+                <span className="text-xs font-semibold" style={{ color: "var(--sidebar-foreground)" }}>Seviye Puanı</span>
               </div>
               <span className="text-sm font-extrabold" style={{ color: "var(--sb-cyan)" }}>
                 {dashboardData?.sidebar.skillPoints.toLocaleString("tr-TR") ?? "0"}
@@ -591,7 +591,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               />
             </div>
             <div className="mt-1.5 text-[10px] opacity-60" style={{ color: "var(--sidebar-foreground)" }}>
-              Sonraki hedefe {dashboardData?.sidebar.pointsToNextLevel ?? 0} coin
+              Sonraki seviyeye {dashboardData?.sidebar.pointsToNextLevel ?? 0} puan
+            </div>
+            <div className="mt-2 pt-2 border-t flex items-center justify-between" style={{ borderColor: "var(--sidebar-border)" }}>
+              <span className="text-[10px] font-semibold" style={{ color: "var(--sidebar-foreground)" }}>
+                SkillCoin bakiyesi
+              </span>
+              <span className="text-xs font-extrabold" style={{ color: "var(--sb-cyan)" }}>
+                {dashboardData?.sidebar.coinBalance.toLocaleString("tr-TR") ?? "0"}
+              </span>
             </div>
           </div>
         </div>
