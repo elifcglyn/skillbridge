@@ -1,3 +1,5 @@
+import { supabase } from "./supabase";
+
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
 
 function stripTrailingSlash(url: string) {
@@ -36,10 +38,25 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 
 async function apiRequest<T>(path: string, init?: RequestInit) {
   let lastNetworkError: unknown;
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) throw sessionError;
+  if (!session?.access_token) {
+    throw new Error("API isteği için geçerli bir oturum bulunamadı.");
+  }
+
+  const headers = new Headers(init?.headers);
+  headers.set("authorization", `Bearer ${session.access_token}`);
 
   for (const baseUrl of API_BASE_URLS) {
     try {
-      const response = await fetch(`${baseUrl}${path}`, init);
+      const response = await fetch(`${baseUrl}${path}`, {
+        ...init,
+        headers,
+      });
       return parseJsonResponse<T>(response);
     } catch (error) {
       if (error instanceof TypeError) {
@@ -63,9 +80,12 @@ export async function apiGet<T>(path: string) {
 }
 
 export async function apiSend<T>(path: string, method: "POST" | "PUT" | "PATCH", body: unknown) {
+  const headers = new Headers();
+  headers.set("content-type", "application/json");
+
   return apiRequest<T>(path, {
     method,
-    headers: { "content-type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
 }

@@ -37,6 +37,7 @@ type ConnectionRow = {
 type MatchCard = AiPick & {
   connectionId: string | null;
   connectionStatus: string;
+  connectionReceiverId: string | null;
 };
 
 function normalizeStatus(value?: string | null) {
@@ -53,6 +54,7 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("recommended");
   const [selectedMatch, setSelectedMatch] = useState<MatchCard | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const loadMatches = async () => {
     setLoading(true);
@@ -65,8 +67,10 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
         return;
       }
 
+      setCurrentUserId(user.id);
+
       const [{ data: aiPicks }, { data: connections }] = await Promise.all([
-        apiGet<{ data: AiPick[] }>(withQuery("/api/matches/ai-picks", { userId: user.id, limit: 30 })),
+        apiGet<{ data: AiPick[] }>(withQuery("/api/matches/ai-picks", { limit: 30 })),
         supabase
           .from("connections")
           .select("*")
@@ -91,6 +95,7 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
             ...pick,
             connectionId: connection?.id ?? null,
             connectionStatus: normalizeStatus(connection?.status ?? pick.status),
+            connectionReceiverId: connection?.receiver_id ?? null,
           };
         }),
       );
@@ -239,7 +244,7 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
                     <MapPin size={11} /> {match.distanceKm ? `${match.distanceKm}km` : "-"}
                   </span>
                   <div className="flex gap-1.5">
-                    {match.connectionStatus === "pending" ? (
+                    {match.connectionStatus === "pending" && match.connectionReceiverId === currentUserId ? (
                       <>
                         <button onClick={(event) => { event.stopPropagation(); handleConnectionStatus(match, "accepted"); }} className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20">
                           <Check size={14} />
@@ -248,7 +253,7 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
                           <X size={14} />
                         </button>
                       </>
-                    ) : (
+                    ) : match.connectionStatus !== "pending" ? (
                       <>
                         <button onClick={(event) => { event.stopPropagation(); onNavigate("messages"); }} className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20">
                           <MessageSquare size={14} />
@@ -257,6 +262,8 @@ export function MatchesView({ onNavigate }: MatchesViewProps) {
                           <Calendar size={14} />
                         </button>
                       </>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-amber-600">Yanıt bekleniyor</span>
                     )}
                   </div>
                 </div>

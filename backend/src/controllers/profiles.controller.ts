@@ -3,13 +3,7 @@ import { getProfile, upsertProfile } from "../services/profiles.service.js";
 
 export async function getProfileController(request: Request, response: Response) {
   try {
-    const userId = String(request.query.userId ?? "").trim();
-
-    if (!userId) {
-      return response.status(400).json({ message: "userId query parametresi zorunludur." });
-    }
-
-    const profile = await getProfile(userId);
+    const profile = await getProfile(request.auth.userId);
     return response.json({ data: profile });
   } catch (error) {
     console.error("Profile get endpoint error:", error);
@@ -19,14 +13,8 @@ export async function getProfileController(request: Request, response: Response)
 
 export async function upsertProfileController(request: Request, response: Response) {
   try {
-    const userId = String(request.body?.userId ?? "").trim();
-
-    if (!userId) {
-      return response.status(400).json({ message: "userId body alanı zorunludur." });
-    }
-
     const profile = await upsertProfile({
-      userId,
+      userId: request.auth.userId,
       firstName: request.body?.firstName,
       lastName: request.body?.lastName,
       university: request.body?.university,

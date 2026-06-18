@@ -65,7 +65,7 @@ export function FindMatchView({ onNavigate }: FindMatchViewProps) {
         setMe({ name: myName, avatar: avatarFor(myName) });
 
         const response = await apiGet<{ data: AiPick[] }>(
-          withQuery("/api/matches/ai-picks", { userId: user.id, limit: 50 }),
+          withQuery("/api/matches/ai-picks", { limit: 50 }),
         );
         setAiPicks(response.data ?? []);
       } catch (loadError) {

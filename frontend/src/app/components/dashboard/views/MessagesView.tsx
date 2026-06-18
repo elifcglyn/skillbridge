@@ -96,21 +96,6 @@ export function MessagesView({ onMessagesRead }: MessagesViewProps) {
     await onMessagesRead?.();
   };
 
-  const markAllIncomingMessagesRead = async (userId: string) => {
-    const { error: updateError } = await supabase
-      .from("messages")
-      .update({ is_read: true })
-      .eq("receiver_id", userId);
-
-    if (updateError) {
-      setError(updateError.message);
-      return false;
-    }
-
-    await onMessagesRead?.();
-    return true;
-  };
-
   useEffect(() => {
     const initChat = async () => {
       setLoadingConv(true);
@@ -124,7 +109,6 @@ export function MessagesView({ onMessagesRead }: MessagesViewProps) {
       }
 
       setMyUserId(user.id);
-      const clearedUnreadMessages = await markAllIncomingMessagesRead(user.id);
 
       const [{ data: profiles, error: profilesError }, { data: allMyMessages, error: messagesError }] =
         await Promise.all([
@@ -150,11 +134,9 @@ export function MessagesView({ onMessagesRead }: MessagesViewProps) {
         ((profiles ?? []) as ProfileRow[]).map((profile) => {
           const messagesWithProfile = messageRows.filter((row) => isBetweenUsers(row, user.id, profile.id));
           const lastMessage = messagesWithProfile[0];
-          const unreadCount = clearedUnreadMessages
-            ? 0
-            : messagesWithProfile.filter(
-                (row) => row.sender_id === profile.id && row.receiver_id === user.id && row.is_read !== true,
-              ).length;
+          const unreadCount = messagesWithProfile.filter(
+            (row) => row.sender_id === profile.id && row.receiver_id === user.id && row.is_read !== true,
+          ).length;
           const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim() || "Kullanıcı";
 
           return {

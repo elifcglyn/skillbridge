@@ -3,13 +3,7 @@ import { createSession, listSessions } from "../services/sessions.service.js";
 
 export async function listSessionsController(request: Request, response: Response) {
   try {
-    const userId = String(request.query.userId ?? "").trim();
-
-    if (!userId) {
-      return response.status(400).json({ message: "userId query parametresi zorunludur." });
-    }
-
-    const sessions = await listSessions(userId);
+    const sessions = await listSessions(request.auth.userId);
     return response.json({ data: sessions, count: sessions.length });
   } catch (error) {
     console.error("Sessions list endpoint error:", error);
@@ -19,19 +13,22 @@ export async function listSessionsController(request: Request, response: Respons
 
 export async function createSessionController(request: Request, response: Response) {
   try {
-    const mentorId = String(request.body?.mentorId ?? "").trim();
     const learnerId = String(request.body?.learnerId ?? request.body?.studentId ?? "").trim();
     const scheduledAt = String(request.body?.scheduledAt ?? "").trim();
     const scheduledDate = new Date(scheduledAt);
 
-    if (!mentorId || !learnerId || !scheduledAt || Number.isNaN(scheduledDate.getTime())) {
+    if (!learnerId || !scheduledAt || Number.isNaN(scheduledDate.getTime())) {
       return response.status(400).json({
-        message: "mentorId, learnerId ve geçerli scheduledAt alanları zorunludur.",
+        message: "learnerId ve geçerli scheduledAt alanları zorunludur.",
       });
     }
 
+    if (learnerId === request.auth.userId) {
+      return response.status(400).json({ message: "Kendinizle görüşme oluşturamazsınız." });
+    }
+
     const session = await createSession({
-      mentorId,
+      mentorId: request.auth.userId,
       learnerId,
       scheduledAt,
       title: request.body?.title,

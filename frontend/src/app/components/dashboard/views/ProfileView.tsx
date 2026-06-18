@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type React from "react";
 import { BookOpen, Check, GraduationCap, Plus, Save, Shield, User, X } from "lucide-react";
-import { apiGet, apiSend, withQuery } from "@/lib/api";
+import { apiGet, apiSend } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
 type ProfileData = {
@@ -58,9 +58,7 @@ export function ProfileView() {
         }
 
         setUserId(user.id);
-        const response = await apiGet<{ data: ProfileData | null }>(
-          withQuery("/api/profiles", { userId: user.id }),
-        );
+        const response = await apiGet<{ data: ProfileData | null }>("/api/profiles");
 
         const profile = response.data;
         const metadata = user.user_metadata ?? {};
@@ -91,7 +89,6 @@ export function ProfileView() {
 
     try {
       const response = await apiSend<{ data: ProfileData }>("/api/profiles", "PUT", {
-        userId,
         firstName,
         lastName,
         university,

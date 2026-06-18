@@ -81,6 +81,7 @@ Frontend variables:
 ```bash
 VITE_SUPABASE_URL="https://<PROJECT_REF>.supabase.co"
 VITE_SUPABASE_ANON_KEY="<SUPABASE_PUBLISHABLE_OR_ANON_KEY>"
+VITE_API_URL="http://localhost:4000"
 ```
 
 Backend variables:
@@ -95,9 +96,24 @@ DATABASE_URL="postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-<REGION>.pooler
 DIRECT_URL="postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres"
 # DIRECT_URL="postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-<REGION>.pooler.supabase.com:5432/postgres"
 
+# Node API verifies frontend Bearer tokens through Supabase Auth.
+SUPABASE_URL="https://<PROJECT_REF>.supabase.co"
+SUPABASE_ANON_KEY="<SUPABASE_PUBLISHABLE_OR_ANON_KEY>"
+
 PORT="4000"
 CORS_ORIGIN="http://localhost:5173"
 ```
+
+The frontend accesses messages, realtime notifications, and connection requests
+directly through the Supabase client under RLS. Profile updates, dashboard
+aggregation, AI Picks, and session/Jitsi creation go through the authenticated
+Node API. API callers must send the active Supabase access token as a Bearer
+token; the frontend API helper adds it automatically.
+
+For local development only, the backend can reuse `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` from `frontend/.env.local` when the backend-specific
+variables are absent. Production deployments must define the backend variables
+explicitly.
 
 ## Git Branch Flow
 

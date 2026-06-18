@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { CalendarPlus, Clock, Link, MapPin, Plus, User, Video } from "lucide-react";
-import { apiGet, apiSend, withQuery } from "@/lib/api";
+import { apiGet, apiSend } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
 type Session = {
@@ -67,7 +67,7 @@ export function CalendarView() {
       setUserId(user.id);
 
       const [{ data: sessionsData }, { data: profileRows }] = await Promise.all([
-        apiGet<{ data: Session[] }>(withQuery("/api/sessions", { userId: user.id })),
+        apiGet<{ data: Session[] }>("/api/sessions"),
         supabase
           .from("profiles")
           .select("id,full_name,first_name,last_name")
@@ -106,7 +106,6 @@ export function CalendarView() {
 
     try {
       const response = await apiSend<{ data: Session }>("/api/sessions", "POST", {
-        mentorId: userId,
         learnerId: peerId,
         title,
         scheduledAt: new Date(scheduledAt).toISOString(),

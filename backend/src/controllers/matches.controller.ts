@@ -3,15 +3,7 @@ import { getAiPicks } from "../services/matches.service.js";
 
 export async function getAiPicksController(request: Request, response: Response) {
   try {
-    const userId = String(request.query.userId ?? "").trim();
     const limitQuery = request.query.limit;
-
-    if (!userId) {
-      return response.status(400).json({
-        message: "userId query parametresi zorunludur.",
-      });
-    }
-
     const limit =
       typeof limitQuery === "string" && limitQuery.trim() !== ""
         ? Number(limitQuery)
@@ -23,7 +15,10 @@ export async function getAiPicksController(request: Request, response: Response)
       });
     }
 
-    const aiPicks = await getAiPicks({ userId, limit });
+    const aiPicks = await getAiPicks({
+      userId: request.auth.userId,
+      limit,
+    });
 
     return response.json({
       data: aiPicks,

@@ -3,13 +3,7 @@ import { getDashboard } from "../services/dashboard.service.js";
 
 export async function getDashboardController(request: Request, response: Response) {
   try {
-    const userId = String(request.query.userId ?? "").trim();
-
-    if (!userId) {
-      return response.status(400).json({ message: "userId query parametresi zorunludur." });
-    }
-
-    const dashboard = await getDashboard(userId);
+    const dashboard = await getDashboard(request.auth.userId);
     return response.json({ data: dashboard });
   } catch (error) {
     console.error("Dashboard endpoint error:", error);

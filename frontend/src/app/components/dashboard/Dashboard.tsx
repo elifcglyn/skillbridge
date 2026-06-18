@@ -54,23 +54,6 @@ const NAV_ITEMS = [
   { id: "progress", icon: BarChart2, label: "Gelişimim" },
 ];
 
-function getMessagesReadAtKey(userId: string) {
-  return `skillbridge_messages_read_at_${userId}`;
-}
-
-function getMessagesReadAt(userId: string) {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(getMessagesReadAtKey(userId));
-}
-
-function setMessagesReadAt(userId: string) {
-  if (typeof window === "undefined") return null;
-
-  const value = new Date().toISOString();
-  localStorage.setItem(getMessagesReadAtKey(userId), value);
-  return value;
-}
-
 export function Dashboard({ onNavigate }: DashboardProps) {
   const [activeView, setActiveView] = useState("home");
   const [darkMode, setDarkMode] = useState(false);
@@ -101,16 +84,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   };
 
   const refreshCounts = async (userId: string) => {
-    const messagesReadAt = getMessagesReadAt(userId);
-    let messageCountQuery = supabase
+    const messageCountQuery = supabase
       .from("messages")
       .select("*", { count: "exact", head: true })
       .eq("receiver_id", userId)
       .or("is_read.eq.false,is_read.is.null");
-
-    if (messagesReadAt) {
-      messageCountQuery = messageCountQuery.gt("created_at", messagesReadAt);
-    }
 
     const [{ count: matchCount }, { count: msgCount }, { count: notifCount }] = await Promise.all([
       supabase
@@ -136,31 +114,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const handleMessagesRead = async () => {
     if (currentUserId) {
-      setMessagesReadAt(currentUserId);
-    }
-
-    setBadgeCounts((counts) => ({ ...counts, messages: 0 }));
-    if (currentUserId) {
       await refreshCounts(currentUserId);
     }
-  };
-
-  const markAllIncomingMessagesRead = async () => {
-    if (!currentUserId) return;
-
-    setMessagesReadAt(currentUserId);
-    setBadgeCounts((counts) => ({ ...counts, messages: 0 }));
-
-    const { error } = await supabase
-      .from("messages")
-      .update({ is_read: true })
-      .eq("receiver_id", currentUserId);
-
-    if (error) {
-      console.error("Messages read update failed:", error);
-    }
-
-    await refreshCounts(currentUserId);
   };
 
   useEffect(() => {
@@ -357,9 +312,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   onClick={() => {
                     setActiveView(item.id);
                     setSidebarOpen(false);
-                    if (item.id === "messages") {
-                      markAllIncomingMessagesRead();
-                    }
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
                     activeView === item.id ? "shadow-md" : "hover:opacity-80"

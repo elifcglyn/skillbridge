@@ -1,4 +1,4 @@
-import { apiGet, withQuery } from "./api";
+import { apiGet } from "./api";
 import { supabase } from "./supabase";
 
 export interface HomeDashboardData {
@@ -101,9 +101,7 @@ export async function getHomeDashboard(): Promise<HomeDashboardData> {
   if (error) throw error;
   if (!user) throw new Error("Ana sayfa verileri için giriş yapmış kullanıcı bulunamadı.");
 
-  const response = await apiGet<{ data: HomeDashboardData }>(
-    withQuery("/api/dashboard", { userId: user.id }),
-  );
+  const response = await apiGet<{ data: HomeDashboardData }>("/api/dashboard");
 
   return response.data;
 }
