@@ -38,6 +38,8 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
   const [department, setDepartment] = useState("");
   const [kvkkApproved, setKvkkApproved] = useState(false);
 
+  const [learnSkillInput, setLearnSkillInput] = useState("");
+
   const customGradient = "linear-gradient(135deg, #312e81 0%, #0d9488 100%)"; // İndigo - Turkuaz
 
   const handleLogin = async () => {
@@ -369,6 +371,15 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
                       </span>
                     ))}
                   </div>
+                  
+                  {}
+                  <div className="flex gap-2 mb-3">
+                    <input value={learnSkillInput} onChange={e => setLearnSkillInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { addSkill(learnSkills, setLearnSkills, learnSkillInput); setLearnSkillInput(""); } }}
+                      className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-teal-500 transition-all" placeholder="Bir beceri yazın ve Enter'a basın..." />
+                  </div>
+                  {}
+
                   <div className="flex flex-wrap gap-2">
                     {SKILL_SUGGESTIONS.slice(8, 16).filter(s => !learnSkills.includes(s)).map(s => (
                       <button key={s} onClick={() => addSkill(learnSkills, setLearnSkills, s)}
