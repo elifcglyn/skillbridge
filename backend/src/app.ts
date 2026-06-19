@@ -17,9 +17,9 @@ export const app = express();
 
 app.use(
   cors({
-    origin: corsOrigin 
-      ? corsOrigin.split(",").map((origin) => origin.trim()) 
-      : "*", // Artık herhangi bir domainden gelen isteği kabul edecek
+    origin: "*", // En sert ve kesin çözüm: Her yerden gelen isteği kabul et!
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
 );
