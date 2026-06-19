@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { requireAuth } from "./middleware/auth.middleware.js";
+import adminRoutes from "./routes/admin.routes.js";
 import coinsRoutes from "./routes/coins.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import feedbackRoutes from "./routes/feedback.routes.js";
@@ -27,6 +28,7 @@ app.use(express.json());
 
 app.use("/health", healthRoutes);
 app.use("/api", requireAuth);
+app.use("/api/admin", adminRoutes);
 app.use("/api/coins", coinsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/feedback", feedbackRoutes);

@@ -4,6 +4,8 @@ declare global {
       auth: {
         userId: string;
         email: string | null;
+        role: string | null;
+        isAdmin: boolean;
       };
     }
   }
