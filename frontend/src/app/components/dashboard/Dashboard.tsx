@@ -23,6 +23,8 @@ import {
   Coins // EKLENDİ
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { RequireAdmin } from "@/app/auth/RequireAdmin";
+import { useAuth } from "@/app/auth/AuthContext";
 import {
   type SkillBridgeSession,
 } from "@/lib/sessions";
@@ -58,9 +60,8 @@ import { RewardsView } from "./views/RewardsView"; // EKLENDİ
 
 interface DashboardProps {
   onNavigate: (page: string) => void;
+  initialView?: string;
 }
-
-const SHOW_ADMIN_NAV = true;
 
 const NAV_ITEMS = [
   { id: "home", icon: Home, label: "Ana Sayfa" },
@@ -74,14 +75,22 @@ const NAV_ITEMS = [
   { id: "notifications", icon: Bell, label: "Bildirimler" },
   { id: "feedback", icon: Star, label: "Geri Bildirim" },
   { id: "progress", icon: BarChart2, label: "Gelişimim" },
-  // TODO: Only show this page for ADMIN or MODERATOR roles.
-  ...(SHOW_ADMIN_NAV
-    ? [{ id: "admin", icon: ShieldCheck, label: "Yönetim Paneli" }]
-    : []),
 ];
 
-export function Dashboard({ onNavigate }: DashboardProps) {
-  const [activeView, setActiveView] = useState("home");
+const ADMIN_NAV_ITEM = {
+  id: "admin",
+  icon: ShieldCheck,
+  label: "Yönetim Paneli",
+};
+
+function dashboardPath(view: string) {
+  return view === "home" ? "/dashboard" : `/dashboard/${view}`;
+}
+
+export function Dashboard({ onNavigate, initialView = "home" }: DashboardProps) {
+  const { isAdmin } = useAuth();
+  const navItems = isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
+  const [activeView, setActiveViewState] = useState(initialView);
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -104,6 +113,20 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const dashboardRefreshTimer = useRef<number | null>(null);
+
+  const setActiveView = (view: string) => {
+    const nextView = view === "admin" && !isAdmin ? "home" : view;
+    setActiveViewState(nextView);
+
+    const nextPath = dashboardPath(nextView);
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath);
+    }
+  };
+
+  useEffect(() => {
+    setActiveViewState(initialView);
+  }, [initialView]);
 
   const badgeCounts = {
     matches: dashboardData?.sidebar.matchCount ?? 0,
@@ -342,7 +365,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
 
     const target = notification.related_url?.replace(/^\/+/, "");
-    if (target && NAV_ITEMS.some((item) => item.id === target)) {
+    if (target && navItems.some((item) => item.id === target)) {
       setActiveView(target);
     }
   };
@@ -412,7 +435,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       case "settings":
         return <SettingsView />;
       case "admin":
-        return <AdminView />;
+        return (
+          <RequireAdmin
+            onUnauthenticated={() => onNavigate("login")}
+            onForbidden={() => setActiveView("home")}
+          >
+            <AdminView />
+          </RequireAdmin>
+        );
       case "rewards": // ÖDÜLLER SAYFASI YÖNLENDİRMESİ
         return <RewardsView onBalanceChange={loadDashboard} />;
       case "notifications":
@@ -464,7 +494,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const activeItem = NAV_ITEMS.find((item) => item.id === activeView);
+  const activeItem = navItems.find((item) => item.id === activeView);
 
   return (
     <div className="h-screen flex bg-background overflow-hidden">
@@ -511,7 +541,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           <div className="space-y-0.5">
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               let currentBadge = 0;
               if (item.id === "matches") currentBadge = badgeCounts.matches;
               if (item.id === "messages") currentBadge = badgeCounts.messages;

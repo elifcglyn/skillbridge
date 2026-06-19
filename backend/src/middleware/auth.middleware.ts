@@ -3,6 +3,12 @@ import type { NextFunction, Request, Response } from "express";
 type SupabaseUserResponse = {
   id?: unknown;
   email?: unknown;
+  app_metadata?: unknown;
+};
+
+type AppMetadata = {
+  role?: unknown;
+  roles?: unknown;
 };
 
 function getBearerToken(request: Request) {
@@ -13,6 +19,29 @@ function getBearerToken(request: Request) {
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
 
   return token;
+}
+
+function getAdminRole(appMetadata: unknown) {
+  if (!appMetadata || typeof appMetadata !== "object") return null;
+
+  const metadata = appMetadata as AppMetadata;
+  if (
+    typeof metadata.role === "string"
+    && metadata.role.toLowerCase() === "admin"
+  ) {
+    return "admin";
+  }
+
+  if (
+    Array.isArray(metadata.roles)
+    && metadata.roles.some(
+      (role) => typeof role === "string" && role.toLowerCase() === "admin",
+    )
+  ) {
+    return "admin";
+  }
+
+  return null;
 }
 
 export async function requireAuth(
@@ -49,6 +78,7 @@ export async function requireAuth(
 
     const user = await authResponse.json() as SupabaseUserResponse;
     const userId = typeof user.id === "string" ? user.id.trim() : "";
+    const role = getAdminRole(user.app_metadata);
 
     if (!userId) {
       return response.status(401).json({ message: "Oturum kullanıcısı doğrulanamadı." });
@@ -57,6 +87,8 @@ export async function requireAuth(
     request.auth = {
       userId,
       email: typeof user.email === "string" ? user.email : null,
+      role,
+      isAdmin: role === "admin",
     };
 
     return next();
@@ -64,4 +96,18 @@ export async function requireAuth(
     console.error("Supabase auth verification error:", error);
     return response.status(503).json({ message: "Kimlik doğrulama servisine ulaşılamadı." });
   }
+}
+
+export function requireAdmin(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  if (!request.auth?.isAdmin) {
+    return response.status(403).json({
+      message: "Bu işlem için yönetici yetkisi gereklidir.",
+    });
+  }
+
+  return next();
 }
