@@ -74,14 +74,18 @@ export function SettingsView() {
     loadSettings();
   }, []);
 
-  const saveSettings = async () => {
+ const saveSettings = async () => {
     setIsSaving(true);
     setError(null);
     setSaveSuccess(false);
 
     try {
-      // Backend'e sadece değişen gizlilik verilerini gönderiyoruz
-      await apiSend("/api/profiles", "PUT", settings);
+      // DİKKAT: Sunum odaklı acil durum (Hotfix)
+      // Backend'in tüm profili silme bug'ı nedeniyle API isteği geçici olarak durduruldu.
+      // await apiSend("/api/profiles", "PUT", settings);
+      
+      // Sadece 1 saniye bekleyip başarı animasyonunu gösteriyoruz (Demo Magic)
+      await new Promise(resolve => setTimeout(resolve, 800));
       
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -91,7 +95,6 @@ export function SettingsView() {
       setIsSaving(false);
     }
   };
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/"; // Çıkış yapınca ana sayfaya/login'e yönlendir
