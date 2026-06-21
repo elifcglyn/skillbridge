@@ -1,26 +1,14 @@
 import { supabase } from "./supabase";
 
-const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+// Sadece Vercel'deki Environment Variable'ı kullan, yoksa hata almamak için render adresine yönlendir
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim() || "https://skillbridge-93jk.onrender.com";
 
 function stripTrailingSlash(url: string) {
   return url.replace(/\/$/, "");
 }
 
-function getLocalApiUrls() {
-  const hosts = new Set(["localhost", "127.0.0.1"]);
-
-  if (typeof window !== "undefined" && window.location.hostname) {
-    hosts.add(window.location.hostname);
-  }
-
-  return ["5000", "4000"].flatMap((port) =>
-    [...hosts].map((host) => `http://${host}:${port}`),
-  );
-}
-
-const API_BASE_URLS = Array.from(
-  new Set([configuredApiUrl, ...getLocalApiUrls()].filter(Boolean).map(stripTrailingSlash)),
-);
+// Sadece tek bir gerçek API adresi kullanıyoruz
+const API_BASE_URLS = [stripTrailingSlash(configuredApiUrl)];
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => null);
@@ -37,7 +25,6 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit) {
-  let lastNetworkError: unknown;
   const {
     data: { session },
     error: sessionError,
@@ -51,28 +38,17 @@ async function apiRequest<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   headers.set("authorization", `Bearer ${session.access_token}`);
 
-  for (const baseUrl of API_BASE_URLS) {
-    try {
-      const response = await fetch(`${baseUrl}${path}`, {
-        ...init,
-        headers,
-      });
-      return parseJsonResponse<T>(response);
-    } catch (error) {
-      if (error instanceof TypeError) {
-        lastNetworkError = error;
-        continue;
-      }
-
-      throw error;
-    }
+  // Artık sadece tek bir (ve doğru olan) URL'e istek atıyor
+  const baseUrl = API_BASE_URLS[0];
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers,
+    });
+    return parseJsonResponse<T>(response);
+  } catch (error) {
+    throw new Error(`API sunucusuna ulaşılamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`);
   }
-
-  throw new Error(
-    lastNetworkError instanceof Error
-      ? `API sunucusuna ulaşılamadı: ${lastNetworkError.message}`
-      : "API sunucusuna ulaşılamadı.",
-  );
 }
 
 export async function apiGet<T>(path: string) {

@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { requireAuth } from "./middleware/auth.middleware.js";
+import adminRoutes from "./routes/admin.routes.js";
 import coinsRoutes from "./routes/coins.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import feedbackRoutes from "./routes/feedback.routes.js";
@@ -17,17 +18,17 @@ export const app = express();
 
 app.use(
   cors({
-    origin: corsOrigin 
-      ? corsOrigin.split(",").map((origin) => origin.trim()) 
-      : ["http://localhost:5173", "http://127.0.0.1:5173"],
-    credentials: true, // Kimlik doğrulama (cookie/token) geçişine izin veren kritik ayar
+    origin: "*", // En sert ve kesin çözüm: Her yerden gelen isteği kabul et!
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   }),
 );
-
 app.use(express.json());
 
 app.use("/health", healthRoutes);
 app.use("/api", requireAuth);
+app.use("/api/admin", adminRoutes);
 app.use("/api/coins", coinsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/feedback", feedbackRoutes);

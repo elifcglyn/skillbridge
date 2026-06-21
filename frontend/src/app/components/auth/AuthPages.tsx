@@ -1,11 +1,22 @@
-import { useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Eye, EyeOff, ArrowLeft, Mail, Zap,Lock, User, MapPin,
-  GraduationCap, Plus, X, Camera, Check, Loader2,LoaderCircle,BookOpen
+  GraduationCap, Plus, X, Camera, Check, ChevronDown, Loader2,LoaderCircle,BookOpen
 } from "lucide-react";
+<<<<<<< HEAD
 import { supabase } from '@/lib/supabase'; 
 import QRCode from "react-qr-code";
+=======
+import { supabase } from '@/lib/supabase'; // Adım 1'de oluşturduğunuz dosya
+import { TURKISH_UNIVERSITIES } from "@/lib/turkishUniversities";
+>>>>>>> 182581d1cbab384f3ce536cc88ff90198d9c75d8
 
 interface AuthPagesProps {
   page: "login" | "register" | "forgot";
@@ -34,12 +45,84 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [university, setUniversity] = useState("");
+  const [universitySearch, setUniversitySearch] = useState("");
+  const [universityOpen, setUniversityOpen] = useState(false);
+  const [highlightedUniversity, setHighlightedUniversity] = useState(-1);
+  const universityPickerRef = useRef<HTMLDivElement>(null);
   const [location, setLocation] = useState("");
   const [bio, setBio] = useState("");
   const [department, setDepartment] = useState("");
   const [kvkkApproved, setKvkkApproved] = useState(false);
 
   const [learnSkillInput, setLearnSkillInput] = useState("");
+
+  const filteredUniversities = useMemo(() => {
+    const query = universitySearch.trim().toLocaleLowerCase("tr-TR");
+    if (!query) return TURKISH_UNIVERSITIES;
+
+    return TURKISH_UNIVERSITIES.filter((item) =>
+      item.toLocaleLowerCase("tr-TR").includes(query),
+    );
+  }, [universitySearch]);
+
+  useEffect(() => {
+    const closeUniversityPicker = (event: MouseEvent) => {
+      if (
+        universityPickerRef.current
+        && !universityPickerRef.current.contains(event.target as Node)
+      ) {
+        setUniversityOpen(false);
+        setUniversitySearch(university);
+      }
+    };
+
+    document.addEventListener("mousedown", closeUniversityPicker);
+    return () => document.removeEventListener("mousedown", closeUniversityPicker);
+  }, [university]);
+
+  const selectUniversity = (selectedUniversity: string) => {
+    setUniversity(selectedUniversity);
+    setUniversitySearch(selectedUniversity);
+    setUniversityOpen(false);
+    setHighlightedUniversity(-1);
+  };
+
+  const handleUniversityKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === "Escape") {
+      setUniversityOpen(false);
+      setUniversitySearch(university);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setUniversityOpen(true);
+      if (filteredUniversities.length === 0) return;
+      setHighlightedUniversity((current) =>
+        Math.min(current + 1, filteredUniversities.length - 1),
+      );
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlightedUniversity((current) => Math.max(current - 1, 0));
+      return;
+    }
+
+    if (
+      event.key === "Enter"
+      && universityOpen
+      && filteredUniversities[highlightedUniversity < 0 ? 0 : highlightedUniversity]
+    ) {
+      event.preventDefault();
+      selectUniversity(
+        filteredUniversities[highlightedUniversity < 0 ? 0 : highlightedUniversity],
+      );
+    }
+  };
 
   const customGradient = "linear-gradient(135deg, #312e81 0%, #0d9488 100%)"; // İndigo - Turkuaz
 
@@ -58,8 +141,12 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
 
   const handleStep1Next = () => {
     setError("");
-    if (!email || !password || !firstName || !lastName || !university) {
+    if (!email || !password || !firstName || !lastName) {
       setError("Lütfen tüm zorunlu alanları doldurun.");
+      return;
+    }
+    if (!university) {
+      setError("Lütfen açılır listeden üniversitenizi seçin.");
       return;
     }
     if (!email.endsWith(".edu.tr")) {
@@ -300,10 +387,89 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5 text-slate-700">Üniversite</label>
-                  <div className="relative">
-                    <GraduationCap size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input value={university} onChange={e=>setUniversity(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" placeholder="Örn: Kırklareli Üniversitesi" />
+                  <div ref={universityPickerRef} className="relative">
+                    <GraduationCap size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 z-10 pointer-events-none" />
+                    <input
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={universityOpen}
+                      aria-controls="university-options"
+                      value={universitySearch}
+                      onFocus={() => {
+                        setUniversitySearch(university);
+                        setUniversityOpen(true);
+                        setHighlightedUniversity(-1);
+                      }}
+                      onChange={(event) => {
+                        setUniversitySearch(event.target.value);
+                        setUniversity("");
+                        setUniversityOpen(true);
+                        setHighlightedUniversity(-1);
+                      }}
+                      onKeyDown={handleUniversityKeyDown}
+                      className="w-full pl-10 pr-11 py-3 rounded-xl border border-slate-200 bg-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                      placeholder="Üniversitenizi arayın ve seçin"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Üniversite listesini aç"
+                      onClick={() => {
+                        if (universityOpen) {
+                          setUniversitySearch(university);
+                          setUniversityOpen(false);
+                        } else {
+                          setUniversitySearch("");
+                          setUniversityOpen(true);
+                        }
+                        setHighlightedUniversity(-1);
+                      }}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition-colors"
+                    >
+                      <ChevronDown
+                        size={17}
+                        className={`transition-transform ${universityOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+
+                    {universityOpen && (
+                      <div
+                        id="university-options"
+                        role="listbox"
+                        className="absolute left-0 right-0 top-full mt-2 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl z-50"
+                      >
+                        {filteredUniversities.length > 0 ? (
+                          filteredUniversities.map((item, index) => (
+                            <button
+                              key={item}
+                              type="button"
+                              role="option"
+                              aria-selected={university === item}
+                              onMouseEnter={() => setHighlightedUniversity(index)}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => selectUniversity(item)}
+                              className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                                highlightedUniversity === index
+                                  ? "bg-indigo-50 text-indigo-700"
+                                  : "text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span>{item}</span>
+                              {university === item && (
+                                <Check size={15} className="shrink-0 text-indigo-600" />
+                              )}
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-3 py-5 text-center text-sm text-slate-500">
+                            Aramanızla eşleşen üniversite bulunamadı.
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    Yazmaya başlayarak listeyi filtreleyebilirsiniz.
+                  </p>
                 </div>
               </div>
 

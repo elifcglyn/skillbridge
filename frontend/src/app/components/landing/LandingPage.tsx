@@ -235,13 +235,13 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.3 }}
             className="flex flex-wrap gap-3 justify-center mb-12">
-            <button onClick={() => onNavigate("dashboard")}
+            <button onClick={() => onNavigate("register")}
               className="flex items-center gap-2 px-7 py-3.5 rounded-2xl text-white font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
               style={{ background: "var(--sb-gradient)" }}>
               <Search size={18} />
               Find a Mentor
             </button>
-            <button onClick={() => onNavigate("dashboard")}
+            <button onClick={() => onNavigate("register")}
               className="flex items-center gap-2 px-7 py-3.5 rounded-2xl font-semibold border-2 border-primary/30 bg-white/80 backdrop-blur-sm text-primary hover:bg-white hover:border-primary transition-all">
               <GraduationCap size={18} />
               Teach a Skill
@@ -501,7 +501,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                 className="p-5 rounded-3xl border border-border bg-card shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer"
-                onClick={() => onNavigate("dashboard")}>
+                onClick={() => onNavigate("register")}>
                 <div className="relative mb-4">
                   <img src={mentor.avatar} alt={mentor.name} className="w-16 h-16 rounded-2xl object-cover" />
                   <div className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-semibold text-white shadow-md"
@@ -562,6 +562,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               <motion.div key={event.title}
                 initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.1 }}
+                onClick={() => onNavigate("register")}
                 className="bg-white/80 backdrop-blur-sm rounded-3xl p-5 shadow-sm hover:shadow-xl border border-white/60 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
                 <div className="text-3xl mb-3">{event.emoji}</div>
                 <div className="px-2 py-0.5 rounded-full text-xs font-medium text-white inline-flex mb-3"
@@ -576,7 +577,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
 
           <div className="text-center mt-10">
-            <button onClick={() => onNavigate("dashboard")}
+            <button onClick={() => onNavigate("register")}
               className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl font-semibold text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all"
               style={{ background: "var(--sb-gradient)" }}>
               View All Events <ArrowRight size={16} />
@@ -601,9 +602,9 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                   className="px-8 py-3.5 rounded-2xl font-semibold bg-white text-primary hover:shadow-xl hover:scale-105 transition-all">
                   Create Free Account
                 </button>
-                <button onClick={() => onNavigate("dashboard")}
+                <button onClick={() => onNavigate("login")}
                   className="px-8 py-3.5 rounded-2xl font-semibold bg-white/15 text-white border border-white/30 hover:bg-white/25 transition-all">
-                  Explore Dashboard →
+                  Sign in →
                 </button>
               </div>
             </div>

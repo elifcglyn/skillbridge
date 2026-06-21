@@ -1,5 +1,9 @@
 import { getPrismaClient } from "../lib/prisma.js";
 import { createNotificationSafely } from "./notifications.service.js";
+import {
+  calculateMatchScore,
+  type MatchScoreProfile,
+} from "./match-score.js";
 
 type GetAiPicksParams = {
   userId: string;
@@ -10,7 +14,6 @@ type SelectMatchParams = {
   userId: string;
   otherUserId: string;
   skillName: string;
-  matchScore?: number;
 };
 
 type SelectedMatchRow = {
@@ -54,6 +57,7 @@ type AiPickRow = {
   other_department: string | null;
   other_teaches: string[] | null;
   other_learns: string[] | null;
+  other_skill_points: number | null;
 };
 
 type ProfilePickRow = {
@@ -84,10 +88,6 @@ function normalizeSkillList(value: string[] | null | undefined) {
     .filter(Boolean);
 }
 
-function normalizeSkillKey(value: string) {
-  return value.toLocaleLowerCase("tr-TR");
-}
-
 function getProfileName(profile: {
   full_name?: string | null;
   first_name?: string | null;
@@ -108,44 +108,169 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
   const prisma = getPrismaClient();
   const take = normalizeLimit(limit);
 
-  const matches = await prisma.$queryRaw<AiPickRow[]>`
-    SELECT
-      matches.id,
-      matches.user_id,
-      matches.matched_user_id,
-      matches.skill_name,
-      matches.matched_skill_name,
-      matches.status,
-      matches.match_score,
-      matches.distance_km,
-      matches.created_at,
-      CASE
-        WHEN matches.user_id::text = ${userId} THEN matches.matched_user_id
-        ELSE matches.user_id
-      END AS other_user_id,
-      profiles.full_name AS other_full_name,
-      profiles.first_name AS other_first_name,
-      profiles.last_name AS other_last_name,
-      profiles.avatar_url AS other_avatar_url,
-      profiles.university AS other_university,
-      profiles.department AS other_department,
-      profiles.teaches AS other_teaches,
-      profiles.learns AS other_learns
-    FROM public.matches
-    LEFT JOIN public.profiles
-      ON profiles.id = CASE
-        WHEN matches.user_id::text = ${userId} THEN matches.matched_user_id
-        ELSE matches.user_id
-      END
-    WHERE user_id::text = ${userId}
-       OR matched_user_id::text = ${userId}
-    ORDER BY match_score DESC NULLS LAST, created_at DESC NULLS LAST
-    LIMIT ${take};
-  `;
+  const [matches, profiles, currentProfiles] = await Promise.all([
+    prisma.$queryRaw<AiPickRow[]>`
+      SELECT
+        matches.id,
+        matches.user_id,
+        matches.matched_user_id,
+        matches.skill_name,
+        matches.matched_skill_name,
+        matches.status,
+        matches.match_score,
+        matches.distance_km,
+        matches.created_at,
+        CASE
+          WHEN matches.user_id::text = ${userId} THEN matches.matched_user_id
+          ELSE matches.user_id
+        END AS other_user_id,
+        profiles.full_name AS other_full_name,
+        profiles.first_name AS other_first_name,
+        profiles.last_name AS other_last_name,
+        profiles.avatar_url AS other_avatar_url,
+        profiles.university AS other_university,
+        profiles.department AS other_department,
+        coalesce(
+          nullif(profiles.teaches, ARRAY[]::text[]),
+          ARRAY(
+            SELECT btrim(user_skills.name)
+            FROM public.user_skills
+            WHERE user_skills.user_id = profiles.id
+              AND btrim(coalesce(user_skills.name, '')) <> ''
+              AND (
+                lower(coalesce(user_skills.kind, '')) IN ('teach', 'teaches')
+              )
+            ORDER BY user_skills.sort_order, user_skills.created_at
+          )
+        ) AS other_teaches,
+        coalesce(
+          nullif(profiles.learns, ARRAY[]::text[]),
+          ARRAY(
+            SELECT btrim(user_skills.name)
+            FROM public.user_skills
+            WHERE user_skills.user_id = profiles.id
+              AND btrim(coalesce(user_skills.name, '')) <> ''
+              AND (
+                lower(coalesce(user_skills.kind, '')) IN ('learn', 'learns')
+              )
+            ORDER BY user_skills.sort_order, user_skills.created_at
+          )
+        ) AS other_learns,
+        profiles.skill_points AS other_skill_points
+      FROM public.matches
+      LEFT JOIN public.profiles
+        ON profiles.id = CASE
+          WHEN matches.user_id::text = ${userId} THEN matches.matched_user_id
+          ELSE matches.user_id
+        END
+      WHERE user_id::text = ${userId}
+         OR matched_user_id::text = ${userId}
+      ORDER BY created_at DESC NULLS LAST
+      LIMIT ${take};
+    `,
+    prisma.$queryRaw<ProfilePickRow[]>`
+      SELECT
+        id,
+        full_name,
+        first_name,
+        last_name,
+        avatar_url,
+        university,
+        department,
+        coalesce(
+          nullif(profiles.teaches, ARRAY[]::text[]),
+          ARRAY(
+            SELECT btrim(user_skills.name)
+            FROM public.user_skills
+            WHERE user_skills.user_id = profiles.id
+              AND btrim(coalesce(user_skills.name, '')) <> ''
+              AND (
+                lower(coalesce(user_skills.kind, '')) IN ('teach', 'teaches')
+              )
+            ORDER BY user_skills.sort_order, user_skills.created_at
+          )
+        ) AS teaches,
+        coalesce(
+          nullif(profiles.learns, ARRAY[]::text[]),
+          ARRAY(
+            SELECT btrim(user_skills.name)
+            FROM public.user_skills
+            WHERE user_skills.user_id = profiles.id
+              AND btrim(coalesce(user_skills.name, '')) <> ''
+              AND (
+                lower(coalesce(user_skills.kind, '')) IN ('learn', 'learns')
+              )
+            ORDER BY user_skills.sort_order, user_skills.created_at
+          )
+        ) AS learns,
+        skill_points
+      FROM public.profiles
+      WHERE id::text <> ${userId}
+        AND coalesce(profile_public, true) = true
+      ORDER BY coalesce(skill_points, 0) DESC, created_at DESC
+      LIMIT 100;
+    `,
+    prisma.$queryRaw<ProfilePickRow[]>`
+      SELECT
+        id,
+        full_name,
+        first_name,
+        last_name,
+        avatar_url,
+        university,
+        department,
+        coalesce(
+          nullif(profiles.teaches, ARRAY[]::text[]),
+          ARRAY(
+            SELECT btrim(user_skills.name)
+            FROM public.user_skills
+            WHERE user_skills.user_id = profiles.id
+              AND btrim(coalesce(user_skills.name, '')) <> ''
+              AND (
+                lower(coalesce(user_skills.kind, '')) IN ('teach', 'teaches')
+              )
+            ORDER BY user_skills.sort_order, user_skills.created_at
+          )
+        ) AS teaches,
+        coalesce(
+          nullif(profiles.learns, ARRAY[]::text[]),
+          ARRAY(
+            SELECT btrim(user_skills.name)
+            FROM public.user_skills
+            WHERE user_skills.user_id = profiles.id
+              AND btrim(coalesce(user_skills.name, '')) <> ''
+              AND (
+                lower(coalesce(user_skills.kind, '')) IN ('learn', 'learns')
+              )
+            ORDER BY user_skills.sort_order, user_skills.created_at
+          )
+        ) AS learns,
+        skill_points
+      FROM public.profiles
+      WHERE id::text = ${userId}
+      LIMIT 1;
+    `,
+  ]);
+
+  const currentProfile = currentProfiles[0];
+  const currentScoreProfile: MatchScoreProfile = {
+    teaches: currentProfile?.teaches,
+    learns: currentProfile?.learns,
+    university: currentProfile?.university,
+    department: currentProfile?.department,
+    skillPoints: currentProfile?.skill_points,
+  };
 
   const persistedPicks = matches.map((match) => {
       const isCurrentUserOwner = match.user_id === userId;
       const otherUserId = match.other_user_id ?? (isCurrentUserOwner ? match.matched_user_id : match.user_id);
+      const score = calculateMatchScore(currentScoreProfile, {
+        teaches: match.other_teaches,
+        learns: match.other_learns,
+        university: match.other_university,
+        department: match.other_department,
+        skillPoints: match.other_skill_points,
+      });
 
       return {
         matchId: match.id,
@@ -162,10 +287,10 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         department: match.other_department,
         teaches: normalizeSkillList(match.other_teaches),
         learns: normalizeSkillList(match.other_learns),
-        skillName: match.skill_name ?? "",
-        matchedSkillName: match.matched_skill_name ?? "",
+        skillName: score.teachOverlap[0] ?? match.skill_name ?? "",
+        matchedSkillName: score.learnOverlap[0] ?? match.matched_skill_name ?? "",
         status: match.status ?? "recommended",
-        matchScore: match.match_score ?? 0,
+        matchScore: score.score,
         distanceKm: match.distance_km?.toString() ?? null,
         createdAt: match.created_at,
       };
@@ -177,59 +302,18 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
       .filter((peerId): peerId is string => Boolean(peerId)),
   );
 
-  const profiles = await prisma.$queryRaw<ProfilePickRow[]>`
-    SELECT
-      id,
-      full_name,
-      first_name,
-      last_name,
-      avatar_url,
-      university,
-      department,
-      teaches,
-      learns,
-      skill_points
-    FROM public.profiles
-    WHERE id::text <> ${userId}
-      AND coalesce(profile_public, true) = true
-    ORDER BY coalesce(skill_points, 0) DESC, created_at DESC
-    LIMIT 100;
-  `;
-
-  const [currentProfile] = await prisma.$queryRaw<ProfilePickRow[]>`
-    SELECT
-      id,
-      full_name,
-      first_name,
-      last_name,
-      avatar_url,
-      university,
-      department,
-      teaches,
-      learns,
-      skill_points
-    FROM public.profiles
-    WHERE id::text = ${userId}
-    LIMIT 1;
-  `;
-
-  const currentLearnKeys = new Set(
-    normalizeSkillList(currentProfile?.learns).map(normalizeSkillKey),
-  );
-  const currentTeachKeys = new Set(
-    normalizeSkillList(currentProfile?.teaches).map(normalizeSkillKey),
-  );
-
   const recommendedPicks = profiles
     .filter((profile) => !persistedPeerIds.has(profile.id))
     .map((profile) => {
       const teaches = normalizeSkillList(profile.teaches);
       const learns = normalizeSkillList(profile.learns);
-      const teachOverlap = teaches.filter((skill) => currentLearnKeys.has(normalizeSkillKey(skill)));
-      const learnOverlap = learns.filter((skill) => currentTeachKeys.has(normalizeSkillKey(skill)));
-      const overlapScore = teachOverlap.length * 24 + learnOverlap.length * 16;
-      const activityScore = Math.min(15, Math.round(Number(profile.skill_points ?? 0) / 200));
-      const matchScore = Math.min(99, 60 + overlapScore + activityScore);
+      const score = calculateMatchScore(currentScoreProfile, {
+        teaches,
+        learns,
+        university: profile.university,
+        department: profile.department,
+        skillPoints: profile.skill_points,
+      });
 
       return {
         matchId: `profile-${profile.id}`,
@@ -242,14 +326,15 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         department: profile.department,
         teaches,
         learns,
-        skillName: teachOverlap[0] ?? currentProfile?.learns?.[0] ?? "",
-        matchedSkillName: learns[0] ?? "",
+        skillName: score.teachOverlap[0] ?? "",
+        matchedSkillName: score.learnOverlap[0] ?? "",
         status: "recommended",
-        matchScore,
+        matchScore: score.score,
         distanceKm: null,
         createdAt: null,
       };
     })
+    .filter((pick) => pick.matchScore > 0)
     .sort((left, right) => right.matchScore - left.matchScore || left.name.localeCompare(right.name, "tr"));
 
   return [...persistedPicks, ...recommendedPicks]
@@ -261,14 +346,46 @@ export async function selectMatch({
   userId,
   otherUserId,
   skillName,
-  matchScore,
 }: SelectMatchParams) {
   const prisma = getPrismaClient();
   const cleanedSkillName = skillName.trim();
-  const normalizedScore = Math.min(Math.max(Math.round(matchScore ?? 0), 0), 100);
 
-  const targetProfiles = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT id
+  const targetProfiles = await prisma.$queryRaw<ProfilePickRow[]>`
+    SELECT
+      id,
+      full_name,
+      first_name,
+      last_name,
+      avatar_url,
+      university,
+      department,
+      coalesce(
+        nullif(profiles.teaches, ARRAY[]::text[]),
+        ARRAY(
+          SELECT btrim(user_skills.name)
+          FROM public.user_skills
+          WHERE user_skills.user_id = profiles.id
+            AND btrim(coalesce(user_skills.name, '')) <> ''
+            AND (
+              lower(coalesce(user_skills.kind, '')) IN ('teach', 'teaches')
+            )
+          ORDER BY user_skills.sort_order, user_skills.created_at
+        )
+      ) AS teaches,
+      coalesce(
+        nullif(profiles.learns, ARRAY[]::text[]),
+        ARRAY(
+          SELECT btrim(user_skills.name)
+          FROM public.user_skills
+          WHERE user_skills.user_id = profiles.id
+            AND btrim(coalesce(user_skills.name, '')) <> ''
+            AND (
+              lower(coalesce(user_skills.kind, '')) IN ('learn', 'learns')
+            )
+          ORDER BY user_skills.sort_order, user_skills.created_at
+        )
+      ) AS learns,
+      skill_points
     FROM public.profiles
     WHERE id::text = ${otherUserId}
       AND id::text <> ${userId}
@@ -294,6 +411,65 @@ export async function selectMatch({
     throw new Error("MATCH_TARGET_NOT_AVAILABLE");
   }
 
+  const [currentProfile] = await prisma.$queryRaw<ProfilePickRow[]>`
+    SELECT
+      id,
+      full_name,
+      first_name,
+      last_name,
+      avatar_url,
+      university,
+      department,
+      coalesce(
+        nullif(profiles.teaches, ARRAY[]::text[]),
+        ARRAY(
+          SELECT btrim(user_skills.name)
+          FROM public.user_skills
+          WHERE user_skills.user_id = profiles.id
+            AND btrim(coalesce(user_skills.name, '')) <> ''
+            AND (
+              lower(coalesce(user_skills.kind, '')) IN ('teach', 'teaches')
+            )
+          ORDER BY user_skills.sort_order, user_skills.created_at
+        )
+      ) AS teaches,
+      coalesce(
+        nullif(profiles.learns, ARRAY[]::text[]),
+        ARRAY(
+          SELECT btrim(user_skills.name)
+          FROM public.user_skills
+          WHERE user_skills.user_id = profiles.id
+            AND btrim(coalesce(user_skills.name, '')) <> ''
+            AND (
+              lower(coalesce(user_skills.kind, '')) IN ('learn', 'learns')
+            )
+          ORDER BY user_skills.sort_order, user_skills.created_at
+        )
+      ) AS learns,
+      skill_points
+    FROM public.profiles
+    WHERE id::text = ${userId}
+    LIMIT 1;
+  `;
+
+  const targetProfile = targetProfiles[0];
+  const normalizedScore = calculateMatchScore(
+    {
+      teaches: currentProfile?.teaches,
+      learns: currentProfile?.learns,
+      university: currentProfile?.university,
+      department: currentProfile?.department,
+      skillPoints: currentProfile?.skill_points,
+    },
+    {
+      teaches: targetProfile.teaches,
+      learns: targetProfile.learns,
+      university: targetProfile.university,
+      department: targetProfile.department,
+      skillPoints: targetProfile.skill_points,
+    },
+  ).score;
+
   const rows = await prisma.$queryRaw<SelectedMatchRow[]>`
     WITH existing_match AS (
       SELECT id
@@ -314,7 +490,7 @@ export async function selectMatch({
       SET
         skill_name = ${cleanedSkillName},
         matched_skill_name = ${cleanedSkillName},
-        match_score = greatest(coalesce(match_score, 0), ${normalizedScore}),
+        match_score = ${normalizedScore},
         status = CASE
           WHEN lower(coalesce(status::text, 'recommended')) IN ('rejected', 'declined', 'cancelled')
             THEN 'recommended'
@@ -461,7 +637,8 @@ export async function getAiPicksLegacy({ userId, limit }: GetAiPicksParams) {
       NULL::text AS other_university,
       NULL::text AS other_department,
       NULL::text[] AS other_teaches,
-      NULL::text[] AS other_learns
+      NULL::text[] AS other_learns,
+      NULL::integer AS other_skill_points
     FROM public.matches
     WHERE user_id::text = ${userId}
        OR matched_user_id::text = ${userId}

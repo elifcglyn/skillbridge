@@ -44,7 +44,6 @@ export async function selectMatchController(request: Request, response: Response
   try {
     const otherUserId = String(request.body?.otherUserId ?? "").trim();
     const skillName = String(request.body?.skillName ?? "").trim();
-    const matchScore = Number(request.body?.matchScore ?? 0);
 
     if (!UUID_PATTERN.test(otherUserId) || otherUserId === request.auth.userId) {
       return response.status(400).json({ message: "Geçerli bir eşleşme kullanıcısı gereklidir." });
@@ -54,15 +53,10 @@ export async function selectMatchController(request: Request, response: Response
       return response.status(400).json({ message: "Geçerli bir beceri adı gereklidir." });
     }
 
-    if (!Number.isFinite(matchScore)) {
-      return response.status(400).json({ message: "Eşleşme puanı sayısal olmalıdır." });
-    }
-
     const match = await selectMatch({
       userId: request.auth.userId,
       otherUserId,
       skillName,
-      matchScore,
     });
 
     return response.status(201).json({ data: match });
