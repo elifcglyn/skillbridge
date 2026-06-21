@@ -83,10 +83,6 @@ const ADMIN_NAV_ITEM = {
   label: "Yönetim Paneli",
 };
 
-function dashboardPath(view: string) {
-  return view === "home" ? "/dashboard" : `/dashboard/${view}`;
-}
-
 export function Dashboard({ onNavigate, initialView = "home" }: DashboardProps) {
   const { isAdmin } = useAuth();
   const navItems = isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
@@ -117,11 +113,7 @@ export function Dashboard({ onNavigate, initialView = "home" }: DashboardProps) 
   const setActiveView = (view: string) => {
     const nextView = view === "admin" && !isAdmin ? "home" : view;
     setActiveViewState(nextView);
-
-    const nextPath = dashboardPath(nextView);
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, "", nextPath);
-    }
+    onNavigate(nextView);
   };
 
   useEffect(() => {
