@@ -65,6 +65,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
   const [activePin, setActivePin] = useState<number | null>(null);
   const [skillFilter, setSkillFilter] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  const [showAllSkills, setShowAllSkills] = useState(false);
+
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -277,33 +279,45 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <p className="text-muted-foreground max-w-xl mx-auto">No payments, no subscriptions. Just people helping people grow.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-            {/* Connector lines */}
+           <div className="relative">
+            {/* Connector lines - desktop only */}
             <div className="absolute top-16 left-1/3 right-1/3 h-0.5 hidden md:block"
               style={{ background: "linear-gradient(90deg, #4338ca, #7c3aed, #06b6d4)" }} />
 
-            {[
-              { step: "01", icon: Users, title: "Create Your Profile", desc: "Tell us what skills you have and what you want to learn. Add your location and schedule — takes under 2 minutes.", color: "#4338ca" },
-              { step: "02", icon: MapPin, title: "Match With Nearby People", desc: "Our AI finds the best matches near you. Browse profiles, read reviews, and connect instantly.", color: "#7c3aed" },
-              { step: "03", icon: BookOpen, title: "Start Learning Together", desc: "Schedule sessions, chat, video call, and track your progress. Build real relationships through shared knowledge.", color: "#06b6d4" },
-            ].map((item, i) => (
-              <motion.div key={item.step}
-                initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }} transition={{ duration: 0.5, delay: i * 0.15 }}>
-                <div className="relative p-8 rounded-3xl border border-border bg-card shadow-sm hover:shadow-xl transition-all duration-300 group hover:-translate-y-1 text-center">
-                  <div className="text-6xl font-extrabold mb-4 opacity-5 absolute top-4 right-4"
-                    style={{ color: item.color }}>{item.step}</div>
-                  <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center shadow-lg"
-                    style={{ background: `${item.color}18` }}>
-                    <item.icon size={28} style={{ color: item.color }} />
+            {/* Mobile: horizontal scroll | Desktop: grid */}
+            <div className="flex md:grid md:grid-cols-3 gap-4 md:gap-6 overflow-x-auto md:overflow-visible snap-x snap-mandatory -mx-4 px-4 md:mx-0 md:px-0 pb-4 md:pb-0">
+              {[
+                { step: "01", icon: Users, title: "Create Your Profile", desc: "Tell us what skills you have and what you want to learn. Add your location and schedule — takes under 2 minutes.", color: "#4338ca" },
+                { step: "02", icon: MapPin, title: "Match With Nearby People", desc: "Our AI finds the best matches near you. Browse profiles, read reviews, and connect instantly.", color: "#7c3aed" },
+                { step: "03", icon: BookOpen, title: "Start Learning Together", desc: "Schedule sessions, chat, video call, and track your progress. Build real relationships through shared knowledge.", color: "#06b6d4" },
+              ].map((item, i) => (
+                <motion.div key={item.step}
+                  initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }} transition={{ duration: 0.5, delay: i * 0.15 }}
+                  className="flex-shrink-0 w-[80%] sm:w-[60%] md:w-auto snap-center">
+                  <div className="relative p-8 rounded-3xl border border-border bg-card shadow-sm hover:shadow-xl transition-all duration-300 group hover:-translate-y-1 text-center h-full">
+                    <div className="text-6xl font-extrabold mb-4 opacity-5 absolute top-4 right-4"
+                      style={{ color: item.color }}>{item.step}</div>
+                    <div className="w-16 h-16 rounded-2xl mx-auto mb-5 flex items-center justify-center shadow-lg"
+                      style={{ background: `${item.color}18` }}>
+                      <item.icon size={28} style={{ color: item.color }} />
+                    </div>
+                    <h3 className="text-lg font-bold text-foreground mb-3">{item.title}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
                   </div>
-                  <h3 className="text-lg font-bold text-foreground mb-3">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              ))}
+            </div>
+            </div>
+
+
+            {/* Mobile scroll hint */}
+            <div className="flex md:hidden justify-center gap-1.5 mt-4">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="w-1.5 h-1.5 rounded-full bg-primary/30" />
+              ))}
+            </div>
           </div>
-        </div>
       </section>
 
       {/* SKILL CATEGORIES */}
@@ -313,8 +327,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <h2 className="text-3xl font-extrabold text-foreground mb-3">Explore Skills</h2>
             <p className="text-muted-foreground">Hundreds of skills taught by real people in your community</p>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {SKILLS.map((skill, i) => (
+         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {(showAllSkills ? SKILLS : SKILLS.slice(0, 2)).map((skill, i) => (
               <motion.div key={skill.name}
                 initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.05 }}
@@ -328,6 +342,14 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 <div className="text-xs text-muted-foreground">{skill.count} people</div>
               </motion.div>
             ))}
+          </div>
+
+          {/* Mobile-only "show all" link */}
+          <div className="flex sm:hidden justify-center mt-5">
+            <button onClick={() => setShowAllSkills(!showAllSkills)}
+              className="text-sm font-semibold text-primary hover:underline">
+              {showAllSkills ? "Daha az göster" : "Tümünü gör"} →
+            </button>
           </div>
         </div>
       </section>
@@ -361,7 +383,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         </div>
       </section>
 
-      {/* MAP SECTION */}
+     {/* MAP SECTION */}
       <section className="py-24" style={{ background: "linear-gradient(180deg, #0f0f23 0%, #1e1b4b 100%)" }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-12">
@@ -375,7 +397,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Controls */}
             <div className="space-y-4">
-              <div className="bg-white/8 backdrop-blur-sm rounded-2xl p-5 border border-white/10">
+              <div className="hidden lg:block bg-white/8 backdrop-blur-sm rounded-2xl p-5 border border-white/10">
                 <div className="text-sm font-semibold text-white/80 mb-3">Filter By</div>
                 <div className="flex flex-col gap-2">
                   {["all", "mentor", "learner"].map(f => (
@@ -398,7 +420,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 </div>
               </div>
 
-              <div className="bg-white/8 backdrop-blur-sm rounded-2xl p-5 border border-white/10 space-y-3">
+              <div className="hidden lg:block bg-white/8 backdrop-blur-sm rounded-2xl p-5 border border-white/10 space-y-3">
                 <div className="text-sm font-semibold text-white/80">Nearby Highlights</div>
                 {[
                   { text: "3 volleyball coaches within 1.2km", emoji: "🏐" },
