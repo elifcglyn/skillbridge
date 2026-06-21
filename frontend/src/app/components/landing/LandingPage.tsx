@@ -328,12 +328,12 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <p className="text-muted-foreground">Hundreds of skills taught by real people in your community</p>
           </div>
          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {(showAllSkills ? SKILLS : SKILLS.slice(0, 2)).map((skill, i) => (
+            {SKILLS.map((skill, i) => (
               <motion.div key={skill.name}
                 initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.05 }}
                 whileHover={{ scale: 1.03, y: -3 }}
-                className="bg-white/80 backdrop-blur-sm rounded-2xl p-5 shadow-sm hover:shadow-xl border border-white/60 cursor-pointer transition-all">
+                className={`bg-white/80 backdrop-blur-sm rounded-2xl p-5 shadow-sm hover:shadow-xl border border-white/60 cursor-pointer transition-all ${!showAllSkills && i >= 4 ? 'hidden sm:block' : ''}`}>
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3"
                   style={{ background: `${skill.color}18` }}>
                   <skill.icon size={22} style={{ color: skill.color }} />
