@@ -11,5 +11,8 @@
     "db:validate": "npm --prefix backend run db:validate",
     "db:generate": "npm --prefix backend run db:generate",
     "db:migrate": "npm --prefix backend run db:migrate"
+  },
+  "dependencies": {
+    "react-router-dom": "^7.18.0"
   }
 }

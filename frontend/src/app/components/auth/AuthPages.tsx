@@ -10,13 +10,8 @@ import {
   Eye, EyeOff, ArrowLeft, Mail, Zap,Lock, User, MapPin,
   GraduationCap, Plus, X, Camera, Check, ChevronDown, Loader2,LoaderCircle,BookOpen
 } from "lucide-react";
-<<<<<<< HEAD
 import { supabase } from '@/lib/supabase'; 
 import QRCode from "react-qr-code";
-=======
-import { supabase } from '@/lib/supabase'; // Adım 1'de oluşturduğunuz dosya
-import { TURKISH_UNIVERSITIES } from "@/lib/turkishUniversities";
->>>>>>> 182581d1cbab384f3ce536cc88ff90198d9c75d8
 
 interface AuthPagesProps {
   page: "login" | "register" | "forgot";
@@ -326,21 +321,26 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200 bg-white">
-        <Logo />
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200 bg-white">
+        <div className="w-full sm:w-auto flex items-center justify-between sm:justify-start">
+          <Logo />
+          <button onClick={() => onNavigate("login")} className="sm:hidden text-xs text-slate-500 hover:text-slate-900 font-medium">
+            Hesabım var
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {[1, 2, 3].map(s => (
-            <div key={s} className={`flex items-center ${s < 3 ? "gap-2" : ""}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${step >= s ? "text-white shadow-md" : "bg-slate-100 text-slate-400"}`}
+            <div key={s} className={`flex items-center ${s < 3 ? "gap-1.5 sm:gap-2" : ""}`}>
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold transition-all flex-shrink-0 ${step >= s ? "text-white shadow-md" : "bg-slate-100 text-slate-400"}`}
                 style={step >= s ? { background: customGradient } : {}}>
                 {step > s ? <Check size={14} /> : s}
               </div>
-              {s < 3 && <div className={`w-8 h-0.5 rounded-full transition-all ${step > s ? "" : "bg-slate-100"}`}
+              {s < 3 && <div className={`w-5 sm:w-8 h-0.5 rounded-full transition-all ${step > s ? "" : "bg-slate-100"}`}
                 style={step > s ? { background: customGradient } : {}} />}
             </div>
           ))}
         </div>
-        <button onClick={() => onNavigate("login")} className="text-sm text-slate-500 hover:text-slate-900 font-medium">
+        <button onClick={() => onNavigate("login")} className="hidden sm:block text-sm text-slate-500 hover:text-slate-900 font-medium">
           Zaten hesabım var
         </button>
       </div>
