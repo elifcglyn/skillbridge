@@ -4,7 +4,8 @@ import {
   Eye, EyeOff, ArrowLeft, Mail, Zap,Lock, User, MapPin,
   GraduationCap, Plus, X, Camera, Check, Loader2,LoaderCircle,BookOpen
 } from "lucide-react";
-import { supabase } from '@/lib/supabase'; // Adım 1'de oluşturduğunuz dosya
+import { supabase } from '@/lib/supabase'; 
+import QRCode from "react-qr-code";
 
 interface AuthPagesProps {
   page: "login" | "register" | "forgot";
