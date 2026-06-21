@@ -206,20 +206,20 @@ export function SettingsView() {
       {/* 4. TEHLİKELİ BÖLGE */}
       <section className="space-y-4 pt-6">
         <h2 className="text-xs font-extrabold uppercase tracking-widest text-red-500 ml-1">Tehlikeli Bölge</h2>
-        <div className="p-1 rounded-2xl border border-red-100 bg-red-50/50">
-          <button onClick={handleLogout} className="w-full flex items-center justify-between p-4 hover:bg-red-50 transition-colors border-b border-red-100 outline-none">
-            <div className="flex items-center gap-3 text-red-600">
+        <div className="p-1 rounded-2xl border border-red-500/20 bg-red-500/5 shadow-sm">
+          <button onClick={handleLogout} className="w-full flex items-center justify-between p-4 rounded-t-xl border-b border-red-500/15 hover:bg-red-500/10 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500/40">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
               <LogOut size={18} />
               <span className="text-sm font-bold">Güvenli Çıkış Yap</span>
             </div>
           </button>
           
-          <button className="w-full flex items-center justify-between p-4 hover:bg-red-100 transition-colors rounded-b-2xl outline-none group">
-            <div className="flex items-center gap-3 text-red-600">
+          <button className="w-full flex items-center justify-between p-4 hover:bg-red-500/10 transition-colors rounded-b-xl outline-none group focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500/40">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
               <Trash2 size={18} className="group-hover:scale-110 transition-transform" />
               <div className="text-left">
                 <span className="text-sm font-bold block">Hesabımı Kalıcı Olarak Sil</span>
-                <span className="text-[11px] font-medium opacity-80">Tüm verileriniz ve eşleşmeleriniz anında silinir.</span>
+                <span className="text-[11px] font-medium text-red-600/70 dark:text-red-300/70">Tüm verileriniz ve eşleşmeleriniz anında silinir.</span>
               </div>
             </div>
           </button>
