@@ -131,7 +131,7 @@ export function FindMatchView({
       )
       .sort((a, b) => b.matchScore - a.matchScore);
 
-    const found = relevantPicks[0] ?? aiPicks[0] ?? null;
+    const found = relevantPicks[0] ?? null;
 
     window.setTimeout(() => {
       setMatchedUser(found);
