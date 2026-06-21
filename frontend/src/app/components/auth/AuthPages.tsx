@@ -202,8 +202,21 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
   };
 
  const Logo = () => (
-    <div className="cursor-pointer" onClick={() => onNavigate("landing")}>
-      <span className="text-2xl font-extrabold tracking-tight text-white">
+    <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate("landing")}>
+      <div className="relative w-9 h-9">
+        <div className="absolute inset-0 rounded-full" style={{ background: customGradient }} />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <path d="M4 11 C4 7.5 7 5 11 5 C15 5 18 7.5 18 11" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M4 11 C4 14.5 7 17 11 17 C15 17 18 14.5 18 11" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round" />
+            <circle cx="4" cy="11" r="2" fill="white" />
+            <circle cx="18" cy="11" r="2" fill="white" />
+            <circle cx="11" cy="5" r="2" fill="rgba(255,255,255,0.8)" />
+            <circle cx="11" cy="17" r="2" fill="rgba(255,255,255,0.8)" />
+          </svg>
+        </div>
+      </div>
+      <span className="text-2xl font-extrabold tracking-tight pb-1" style={{ background: customGradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
         SkillBridge
       </span>
     </div>
@@ -275,24 +288,41 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
             <div className="lg:hidden mb-8"><Logo /></div>
             <div className="mb-8">
-              <h1 className="text-3xl font-extrabold text-slate-900 mb-2">Giriş Yap</h1>
+              <h1 className="text-3xl font-extrabold text-slate-900 mb-8">Giriş Yap</h1>
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-slate-700">Şifre</label>
-                  <button onClick={() => onNavigate("forgot")} className="text-xs text-indigo-600 hover:underline">Şifremi unuttum?</button>
-                </div>
-                <div className="relative">
-                  <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type={showPassword ? "text" : "password"} placeholder="Şifrenizi girin"
-                    value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
-                  <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
+              <div className="space-y-5 mb-8">
+  {/* E-posta Alanı */}
+  <div>
+    <label className="block text-sm font-medium text-slate-700 mb-1.5">E-posta</label>
+    <div className="relative">
+      <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      <input 
+        type="email" 
+        value={email} 
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="E-posta adresinizi girin"
+        className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" 
+      />
+    </div>
+  </div>
 
+  {/* Şifre Alanı */}
+  <div>
+    <div className="flex items-center justify-between mb-1.5">
+      <label className="text-sm font-medium text-slate-700">Şifre</label>
+      <button onClick={() => onNavigate("forgot")} className="text-xs text-indigo-600 hover:underline">Şifremi unuttum?</button>
+    </div>
+    <div className="relative">
+      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      <input type={showPassword ? "text" : "password"} placeholder="Şifrenizi girin"
+        value={password} onChange={(e) => setPassword(e.target.value)}
+        className="w-full pl-10 pr-10 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+      <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  </div>
+</div>
               {error && <p className="text-red-500 text-sm font-medium">{error}</p>}
 
               <button onClick={handleLogin} disabled={loading}
