@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { supabase } from '@/lib/supabase'; 
 import QRCode from "react-qr-code";
+import { TURKISH_UNIVERSITIES } from '@/lib/turkishUniversities';
 
 interface AuthPagesProps {
   page: "login" | "register" | "forgot";
@@ -210,9 +211,9 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
 
   if (page === "login") {
     return (
-      <div className="min-h-screen flex">
+      <div className="min-h-screen flex flex-col lg:flex-row">
         {/* Left panel */}
-        <div className="flex-1 flex flex-col justify-between p-12 lg:p-20 text-white relative overflow-hidden bg-gradient-to-br from-[#1a1a40] to-[#0f0f2d]">
+         <div className="hidden lg:flex flex-1 flex-col justify-between p-12 relative overflow-hidden bg-indigo-950 text-white">
   {/* Arka plan efekti */}
   <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none" style={{ background: "radial-gradient(circle at top right, #6366f1, transparent)" }} />
   
@@ -265,26 +266,16 @@ export function AuthPages({ page, onNavigate }: AuthPagesProps) {
   </div>
 </div>
         {/* Right panel */}
-        <div className="flex-1 flex items-center justify-center p-6 bg-slate-50">
+        {/* Right panel */}
+        <div className="flex-1 flex items-center justify-center p-6 bg-slate-50 relative">
+          <button onClick={() => onNavigate("landing")}
+            className="absolute top-6 left-6 p-2 rounded-xl hover:bg-slate-200 transition-colors text-slate-600">
+            <ArrowLeft size={20} />
+          </button>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
             <div className="lg:hidden mb-8"><Logo /></div>
             <div className="mb-8">
               <h1 className="text-3xl font-extrabold text-slate-900 mb-2">Giriş Yap</h1>
-              <p className="text-slate-500">Hesabın yok mu?{" "}
-                <button onClick={() => onNavigate("register")} className="text-indigo-600 font-semibold hover:underline">Ücretsiz oluştur</button>
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Öğrenci E-postası</label>
-                <div className="relative">
-                  <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type="email" placeholder="isim.soyad@ogrenci.edu.tr"
-                    value={email} onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
-                </div>
-              </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
