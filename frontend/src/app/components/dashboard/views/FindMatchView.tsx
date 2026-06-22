@@ -44,10 +44,225 @@ type AiPick = {
   learns: string[];
   skillName: string;
   matchScore: number;
+  commonSkillCount?: number;
+  matchType?: "skill" | "profile";
+};
+
+type ProfileCandidateRow = {
+  id: string;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+  university: string | null;
+  department: string | null;
+  bio: string | null;
+  teaches: string[] | null;
+  learns: string[] | null;
+  skill_points: number | null;
 };
 
 function avatarFor(name: string, avatarUrl?: string | null) {
   return avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "U")}&background=random&color=fff&size=200`;
+}
+
+function normalizeSkill(value?: string | null) {
+  return (value ?? "")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/ı/g, "i")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function skillsMatch(left?: string | null, right?: string | null) {
+  const leftKey = normalizeSkill(left);
+  const rightKey = normalizeSkill(right);
+
+  if (!leftKey || !rightKey) return false;
+  if (leftKey === rightKey) return true;
+
+  const leftTokens = leftKey.split(" ");
+  const rightTokens = rightKey.split(" ");
+  const [shorterTokens, longerTokens] = leftTokens.length <= rightTokens.length
+    ? [leftTokens, rightTokens]
+    : [rightTokens, leftTokens];
+
+  if (shorterTokens.length === 1 && shorterTokens[0].length < 3) {
+    return false;
+  }
+
+  const longerTokenSet = new Set(longerTokens);
+  return shorterTokens.every((token) => longerTokenSet.has(token));
+}
+
+function candidateTeachesSkill(candidate: AiPick, selectedSkill: string) {
+  const teachingSkills = candidate.teaches.length > 0
+    ? candidate.teaches
+    : [candidate.skillName];
+
+  return teachingSkills.some((skill) => skillsMatch(skill, selectedSkill));
+}
+
+function compareAiPicks(left: AiPick, right: AiPick) {
+  return right.matchScore - left.matchScore
+    || (right.commonSkillCount ?? 0) - (left.commonSkillCount ?? 0)
+    || left.name.localeCompare(right.name, "tr");
+}
+
+function cleanSkillList(skills?: string[] | null) {
+  const uniqueSkills = new Map<string, string>();
+
+  for (const skill of skills ?? []) {
+    if (typeof skill !== "string") continue;
+    const cleanedSkill = skill.trim();
+    const key = normalizeSkill(cleanedSkill);
+    if (key && !uniqueSkills.has(key)) {
+      uniqueSkills.set(key, cleanedSkill);
+    }
+  }
+
+  return [...uniqueSkills.values()];
+}
+
+function findSkillOverlap(source: string[], targets: string[]) {
+  return source.filter((skill) =>
+    targets.some((targetSkill) => skillsMatch(skill, targetSkill)),
+  );
+}
+
+function profileName(profile: ProfileCandidateRow) {
+  return profile.full_name?.trim()
+    || [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim()
+    || "SkillBridge Kullanıcısı";
+}
+
+function profileValuesMatch(left?: string | null, right?: string | null) {
+  const leftKey = normalizeSkill(left);
+  return Boolean(leftKey && leftKey === normalizeSkill(right));
+}
+
+function calculateLocalPick(
+  currentProfile: ProfileCandidateRow,
+  candidate: ProfileCandidateRow,
+  selectedSkill: string,
+) {
+  const currentTeaches = cleanSkillList(currentProfile.teaches);
+  const candidateTeaches = cleanSkillList(candidate.teaches);
+  const candidateLearns = cleanSkillList(candidate.learns);
+  const selectedTeachingSkill = candidateTeaches.find((skill) =>
+    skillsMatch(skill, selectedSkill),
+  );
+  const reciprocalOverlap = findSkillOverlap(candidateLearns, currentTeaches);
+  const universityScore = profileValuesMatch(
+    currentProfile.university,
+    candidate.university,
+  ) ? 5 : 0;
+  const departmentScore = profileValuesMatch(
+    currentProfile.department,
+    candidate.department,
+  ) ? 3 : 0;
+  const candidateSkillPoints = Number(candidate.skill_points ?? 0);
+  const activityScore = Number.isFinite(candidateSkillPoints)
+    ? Math.min(3, Math.max(0, Math.round(candidateSkillPoints / 200)))
+    : 0;
+
+  if (selectedTeachingSkill) {
+    const reciprocalCoverage = candidateLearns.length > 0
+      ? reciprocalOverlap.length / candidateLearns.length
+      : 0;
+
+    return {
+      score: Math.min(
+        100,
+        Math.round(
+          70
+          + reciprocalCoverage * 20
+          + universityScore
+          + Math.min(2, departmentScore)
+          + activityScore,
+        ),
+      ),
+      commonSkillCount: 1 + reciprocalOverlap.length,
+      skillName: selectedTeachingSkill,
+      matchType: "skill" as const,
+    };
+  }
+
+  if (candidateTeaches.length === 0) {
+    return {
+      score: 0,
+      commonSkillCount: 0,
+      skillName: "",
+      matchType: "profile" as const,
+    };
+  }
+
+  return {
+    score: 0,
+    commonSkillCount: 0,
+    skillName: "",
+    matchType: "skill" as const,
+  };
+}
+
+async function loadProfilePicks(
+  currentUserId: string,
+  selectedSkill: string,
+) {
+  const profileColumns =
+    "id,full_name,first_name,last_name,avatar_url,university,department,bio,teaches,learns,skill_points";
+  const [currentResult, candidatesResult] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(profileColumns)
+      .eq("id", currentUserId)
+      .maybeSingle(),
+    supabase
+      .from("profiles")
+      .select(profileColumns)
+      .neq("id", currentUserId)
+      .eq("profile_public", true)
+      .limit(100),
+  ]);
+
+  if (currentResult.error) throw currentResult.error;
+  if (candidatesResult.error) throw candidatesResult.error;
+  if (!currentResult.data) return [];
+
+  const currentProfile = currentResult.data as ProfileCandidateRow;
+  const scoredPicks = ((candidatesResult.data ?? []) as ProfileCandidateRow[])
+    .map((candidate) => {
+      const score = calculateLocalPick(
+        currentProfile,
+        candidate,
+        selectedSkill,
+      );
+
+      return {
+        matchId: `profile-${candidate.id}`,
+        otherUserId: candidate.id,
+        name: profileName(candidate),
+        avatarUrl: candidate.avatar_url,
+        university: candidate.university,
+        bio: candidate.bio,
+        teaches: cleanSkillList(candidate.teaches),
+        learns: cleanSkillList(candidate.learns),
+        skillName: score.skillName,
+        matchScore: score.score,
+        commonSkillCount: score.commonSkillCount,
+        matchType: score.matchType,
+      } satisfies AiPick;
+    })
+    .filter((pick) => pick.matchScore > 0);
+  const skillMatches = scoredPicks
+    .filter((pick) => pick.matchType === "skill")
+    .sort(compareAiPicks);
+
+  return skillMatches;
 }
 
 export function FindMatchView({
@@ -59,6 +274,7 @@ export function FindMatchView({
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const [customSkill, setCustomSkill] = useState("");
   const [me, setMe] = useState({ name: "Sen", avatar: "" });
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiPicks, setAiPicks] = useState<AiPick[]>([]);
   const [matchedUser, setMatchedUser] = useState<AiPick | null>(null);
@@ -85,13 +301,19 @@ export function FindMatchView({
           return;
         }
 
+        setCurrentUserId(user.id);
         const myName = user.user_metadata?.first_name || "Sen";
         setMe({ name: myName, avatar: avatarFor(myName) });
 
         const response = await apiGet<{ data: AiPick[] }>(
           withQuery("/api/matches/ai-picks", { limit: 50 }),
         );
-        setAiPicks(response.data ?? []);
+        setAiPicks(
+          (response.data ?? [])
+            .filter((pick) => Boolean(pick.otherUserId) && pick.otherUserId !== user.id)
+            .filter((pick) => pick.matchScore > 0)
+            .sort(compareAiPicks),
+        );
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "AI Picks yüklenemedi.");
       } finally {
@@ -105,38 +327,68 @@ export function FindMatchView({
   // Diğer olasılıklar listesini skora göre azalan sırala
   const otherSuggestions = useMemo(() => {
     if (!matchedUser || !selectedSkill) return [];
-    const searchTerm = selectedSkill.toLocaleLowerCase("tr-TR").trim();
     
     return aiPicks
       .filter((pick) => pick.otherUserId !== matchedUser.otherUserId)
-      .filter((pick) => 
-        [...pick.teaches, pick.skillName]
-          .filter(Boolean)
-          .some((value) => value.toLocaleLowerCase("tr-TR").includes(searchTerm))
+      .filter((pick) => pick.matchScore > 0)
+      .filter((pick) =>
+        matchedUser.matchType === "profile"
+          ? pick.matchType === "profile"
+          : candidateTeachesSkill(pick, selectedSkill),
       )
-      .sort((a, b) => b.matchScore - a.matchScore)
+      .sort(compareAiPicks)
       .slice(0, 3);
   }, [aiPicks, matchedUser, selectedSkill]);
 
-  const handleSkillSelect = (skill: string) => {
-    const searchTerm = skill.toLocaleLowerCase("tr-TR").trim();
-    setSelectedSkill(skill);
+  const handleSkillSelect = async (skill: string) => {
+    const cleanedSkill = skill.trim();
+    if (!cleanedSkill) return;
+
+    setSelectedSkill(cleanedSkill);
     setStep("spinning");
+    setError(null);
 
-    const relevantPicks = aiPicks
-      .filter((pick) =>
-        [...pick.teaches, pick.skillName]
-          .filter(Boolean)
-          .some((value) => value.toLocaleLowerCase("tr-TR").includes(searchTerm))
-      )
-      .sort((a, b) => b.matchScore - a.matchScore);
+    try {
+      const [response] = await Promise.all([
+        apiGet<{ data: AiPick[] }>(
+          withQuery("/api/matches/ai-picks", {
+            limit: 50,
+            skill: cleanedSkill,
+          }),
+        ),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 700)),
+      ]);
 
-    const found = relevantPicks[0] ?? null;
+      const apiPicks = (response.data ?? [])
+        .filter((pick) => Boolean(pick.otherUserId))
+        .filter((pick) => pick.otherUserId !== currentUserId)
+        .filter((pick) => pick.matchScore > 0)
+        .sort(compareAiPicks);
+      const directSkillPicks = apiPicks.filter((pick) =>
+        candidateTeachesSkill(pick, cleanedSkill),
+      );
+      let relevantPicks = directSkillPicks;
 
-    window.setTimeout(() => {
-      setMatchedUser(found);
+      if (relevantPicks.length === 0 && currentUserId) {
+        relevantPicks = await loadProfilePicks(
+          currentUserId,
+          cleanedSkill,
+        );
+      }
+
+      setAiPicks(relevantPicks);
+      setMatchedUser(relevantPicks[0] ?? null);
+    } catch (selectionError) {
+      setAiPicks([]);
+      setMatchedUser(null);
+      setError(
+        selectionError instanceof Error
+          ? selectionError.message
+          : "Eşleşmeler yüklenemedi.",
+      );
+    } finally {
       setStep("result");
-    }, 700);
+    }
   };
 
   const reset = () => {
@@ -150,10 +402,9 @@ export function FindMatchView({
 
   const persistSelectedMatch = async () => {
     if (!matchedUser || !selectedSkill) return null;
-    const searchTerm = selectedSkill.toLocaleLowerCase("tr-TR").trim();
     const matchedSkill =
       matchedUser.teaches.find((skill) =>
-        skill.toLocaleLowerCase("tr-TR").includes(searchTerm),
+        skillsMatch(skill, selectedSkill),
       ) ||
       matchedUser.skillName ||
       selectedSkill;
@@ -314,7 +565,9 @@ export function FindMatchView({
             ) : (
               <div className="w-full max-w-[420px]">
                 <div className="text-center mb-6">
-                  <h2 className="text-2xl font-extrabold text-foreground">En İyi Eşleşme</h2>
+                  <h2 className="text-2xl font-extrabold text-foreground">
+                    En İyi Eşleşme
+                  </h2>
                 </div>
 
                 {/* BİRLEŞİK KART YAPISI (ÜST KISIM: VS GÖRÜNÜMÜ) */}

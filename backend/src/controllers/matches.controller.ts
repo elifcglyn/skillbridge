@@ -15,6 +15,9 @@ export async function getAiPicksController(request: Request, response: Response)
       typeof limitQuery === "string" && limitQuery.trim() !== ""
         ? Number(limitQuery)
         : undefined;
+    const skillQuery = request.query.skill;
+    const skillName =
+      typeof skillQuery === "string" ? skillQuery.trim() : undefined;
 
     if (limit !== undefined && Number.isNaN(limit)) {
       return response.status(400).json({
@@ -22,9 +25,16 @@ export async function getAiPicksController(request: Request, response: Response)
       });
     }
 
+    if (skillName && skillName.length > 100) {
+      return response.status(400).json({
+        message: "Beceri adı en fazla 100 karakter olabilir.",
+      });
+    }
+
     const aiPicks = await getAiPicks({
       userId: request.auth.userId,
       limit,
+      skillName,
     });
 
     return response.json({
@@ -63,6 +73,12 @@ export async function selectMatchController(request: Request, response: Response
   } catch (error) {
     if (error instanceof Error && error.message === "MATCH_TARGET_NOT_AVAILABLE") {
       return response.status(404).json({ message: "Eşleşme kullanıcısı artık erişilebilir değil." });
+    }
+
+    if (error instanceof Error && error.message === "MATCH_SKILL_NOT_AVAILABLE") {
+      return response.status(400).json({
+        message: "Seçilen beceri bu kullanıcı tarafından öğretilmiyor.",
+      });
     }
 
     console.error("Match selection endpoint error:", error);
