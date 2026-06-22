@@ -2,12 +2,14 @@ import { getPrismaClient } from "../lib/prisma.js";
 import { createNotificationSafely } from "./notifications.service.js";
 import {
   calculateMatchScore,
+  compareMatchCandidates,
   type MatchScoreProfile,
 } from "./match-score.js";
 
 type GetAiPicksParams = {
   userId: string;
   limit?: number;
+  skillName?: string;
 };
 
 type SelectMatchParams = {
@@ -55,6 +57,7 @@ type AiPickRow = {
   other_avatar_url: string | null;
   other_university: string | null;
   other_department: string | null;
+  other_bio: string | null;
   other_teaches: string[] | null;
   other_learns: string[] | null;
   other_skill_points: number | null;
@@ -68,6 +71,7 @@ type ProfilePickRow = {
   avatar_url: string | null;
   university: string | null;
   department: string | null;
+  bio: string | null;
   teaches: string[] | null;
   learns: string[] | null;
   skill_points: number | null;
@@ -104,9 +108,14 @@ function getProfileName(profile: {
   return composedName || "SkillBridge Kullanıcısı";
 }
 
-export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
+export async function getAiPicks({
+  userId,
+  limit,
+  skillName,
+}: GetAiPicksParams) {
   const prisma = getPrismaClient();
   const take = normalizeLimit(limit);
+  const requestedSkill = skillName?.trim();
 
   const [matches, profiles, currentProfiles] = await Promise.all([
     prisma.$queryRaw<AiPickRow[]>`
@@ -130,6 +139,7 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         profiles.avatar_url AS other_avatar_url,
         profiles.university AS other_university,
         profiles.department AS other_department,
+        profiles.bio AS other_bio,
         coalesce(
           nullif(profiles.teaches, ARRAY[]::text[]),
           ARRAY(
@@ -177,6 +187,7 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         avatar_url,
         university,
         department,
+        bio,
         coalesce(
           nullif(profiles.teaches, ARRAY[]::text[]),
           ARRAY(
@@ -219,6 +230,7 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         avatar_url,
         university,
         department,
+        bio,
         coalesce(
           nullif(profiles.teaches, ARRAY[]::text[]),
           ARRAY(
@@ -255,9 +267,10 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
   const currentProfile = currentProfiles[0];
   const currentScoreProfile: MatchScoreProfile = {
     teaches: currentProfile?.teaches,
-    learns: currentProfile?.learns,
+    learns: requestedSkill ? [requestedSkill] : currentProfile?.learns,
     university: currentProfile?.university,
     department: currentProfile?.department,
+    bio: currentProfile?.bio,
     skillPoints: currentProfile?.skill_points,
   };
 
@@ -269,9 +282,9 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         learns: match.other_learns,
         university: match.other_university,
         department: match.other_department,
+        bio: match.other_bio,
         skillPoints: match.other_skill_points,
       });
-
       return {
         matchId: match.id,
         userId: match.user_id,
@@ -285,16 +298,25 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         avatarUrl: match.other_avatar_url,
         university: match.other_university,
         department: match.other_department,
+        bio: match.other_bio,
         teaches: normalizeSkillList(match.other_teaches),
         learns: normalizeSkillList(match.other_learns),
         skillName: score.teachOverlap[0] ?? match.skill_name ?? "",
         matchedSkillName: score.learnOverlap[0] ?? match.matched_skill_name ?? "",
         status: match.status ?? "recommended",
         matchScore: score.score,
+        commonSkillCount: score.commonSkillCount,
+        matchType: "skill" as const,
         distanceKm: match.distance_km?.toString() ?? null,
         createdAt: match.created_at,
       };
-    });
+    })
+    .filter((pick) =>
+      Boolean(
+        pick.otherUserId
+        && pick.otherUserId !== userId
+      ),
+    );
 
   const persistedPeerIds = new Set(
     persistedPicks
@@ -312,9 +334,9 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         learns,
         university: profile.university,
         department: profile.department,
+        bio: profile.bio,
         skillPoints: profile.skill_points,
       });
-
       return {
         matchId: `profile-${profile.id}`,
         userId,
@@ -324,22 +346,27 @@ export async function getAiPicks({ userId, limit }: GetAiPicksParams) {
         avatarUrl: profile.avatar_url,
         university: profile.university,
         department: profile.department,
+        bio: profile.bio,
         teaches,
         learns,
         skillName: score.teachOverlap[0] ?? "",
         matchedSkillName: score.learnOverlap[0] ?? "",
         status: "recommended",
         matchScore: score.score,
+        commonSkillCount: score.commonSkillCount,
+        matchType: "skill" as const,
         distanceKm: null,
         createdAt: null,
       };
     })
-    .filter((pick) => pick.matchScore > 0)
-    .sort((left, right) => right.matchScore - left.matchScore || left.name.localeCompare(right.name, "tr"));
+    .sort(compareMatchCandidates);
 
-  return [...persistedPicks, ...recommendedPicks]
-    .sort((left, right) => right.matchScore - left.matchScore || left.name.localeCompare(right.name, "tr"))
-    .slice(0, take);
+  const allPicks = [...persistedPicks, ...recommendedPicks];
+  const skillMatches = allPicks
+    .filter((pick) => pick.matchScore > 0)
+    .sort(compareMatchCandidates);
+
+  return skillMatches.slice(0, take);
 }
 
 export async function selectMatch({
@@ -359,6 +386,7 @@ export async function selectMatch({
       avatar_url,
       university,
       department,
+      bio,
       coalesce(
         nullif(profiles.teaches, ARRAY[]::text[]),
         ARRAY(
@@ -420,6 +448,7 @@ export async function selectMatch({
       avatar_url,
       university,
       department,
+      bio,
       coalesce(
         nullif(profiles.teaches, ARRAY[]::text[]),
         ARRAY(
@@ -453,22 +482,30 @@ export async function selectMatch({
   `;
 
   const targetProfile = targetProfiles[0];
+  const currentScoreProfile = {
+    teaches: currentProfile?.teaches,
+    learns: [cleanedSkillName],
+    university: currentProfile?.university,
+    department: currentProfile?.department,
+    bio: currentProfile?.bio,
+    skillPoints: currentProfile?.skill_points,
+  };
+  const targetScoreProfile = {
+    teaches: targetProfile.teaches,
+    learns: targetProfile.learns,
+    university: targetProfile.university,
+    department: targetProfile.department,
+    bio: targetProfile.bio,
+    skillPoints: targetProfile.skill_points,
+  };
   const normalizedScore = calculateMatchScore(
-    {
-      teaches: currentProfile?.teaches,
-      learns: currentProfile?.learns,
-      university: currentProfile?.university,
-      department: currentProfile?.department,
-      skillPoints: currentProfile?.skill_points,
-    },
-    {
-      teaches: targetProfile.teaches,
-      learns: targetProfile.learns,
-      university: targetProfile.university,
-      department: targetProfile.department,
-      skillPoints: targetProfile.skill_points,
-    },
+    currentScoreProfile,
+    targetScoreProfile,
   ).score;
+
+  if (normalizedScore === 0) {
+    throw new Error("MATCH_SKILL_NOT_AVAILABLE");
+  }
 
   const rows = await prisma.$queryRaw<SelectedMatchRow[]>`
     WITH existing_match AS (
@@ -636,6 +673,7 @@ export async function getAiPicksLegacy({ userId, limit }: GetAiPicksParams) {
       NULL::text AS other_avatar_url,
       NULL::text AS other_university,
       NULL::text AS other_department,
+      NULL::text AS other_bio,
       NULL::text[] AS other_teaches,
       NULL::text[] AS other_learns,
       NULL::integer AS other_skill_points
